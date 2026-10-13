@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="occulus-token" content="__TOKEN__" />
+    <title>Emperor’s Occulus</title>
+    <link rel="icon" href="/static/icon.svg" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <aside>
+      <a class="brand" href="/"
+        ><img src="/static/icon.svg" alt="" /><span
+          >EMPEROR’S<strong>OCCULUS</strong></span
+        ></a
+      >
+      <div class="nav-label">OBSERVATÓRIO</div>
+      <div class="nav active">◉ <span>Phytobloom</span><small>01</small></div>
+      <p class="aside-note">
+        Um lugar para acompanhar<br />o que as águas revelam.
+      </p>
+      <div class="local">
+        <i></i> Ambiente local <span>Somente leitura</span>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow">ANÁLISES / PHYTOBLOOM</div>
+          <h1>Um olhar sobre a água.</h1>
+          <p>Explore os resultados publicados, área por área.</p>
+        </div>
+        <button id="refresh" class="secondary">↻ Atualizar catálogo</button>
+      </header>
+      <section class="stats" aria-label="Resumo">
+        <div>
+          <span>ÁREAS MONITORADAS</span><strong id="areas-count">—</strong>
+        </div>
+        <div>
+          <span>DATAS DISPONÍVEIS</span><strong id="dates-count">—</strong>
+        </div>
+        <div><span>ÚLTIMA AQUISIÇÃO</span><strong id="latest">—</strong></div>
+        <div>
+          <span>TRANSFERIDO NESTA SESSÃO</span
+          ><strong id="transfer">0 KB</strong>
+        </div>
+      </section>
+      <section class="workspace">
+        <div class="section-title">
+          <div>
+            <span class="dot"></span>
+            <h2>Explorar análises</h2>
+          </div>
+          <span id="catalog-status">Conectando ao catálogo…</span>
+        </div>
+        <div class="filters">
+          <label>Área de interesse<select id="area"></select></label
+          ><label
+            >Produto<select id="product">
+              <option value="NDCI">NDCI · clorofila</option>
+              <option value="NDVI">NDVI · vegetação</option>
+              <option value="NDVI2">NDVI2 · macrófitas</option>
+              <option value="RGB">RGB · cor natural</option>
+              <option value="RGB_MASK">RGB · com máscara</option>
+            </select></label
+          ><label>Data da imagem<select id="date"></select></label
+          ><label
+            >Comparar com<select id="compare">
+              <option value="">Sem comparação</option>
+            </select></label
+          ><label
+            >Prévia<select id="quality">
+              <option value="96">Econômica · 96 linhas</option>
+              <option value="128" selected>Equilibrada · 128 linhas</option>
+              <option value="256">Detalhada · 256 linhas</option>
+            </select></label
+          ><button id="load">Visualizar</button>
+        </div>
+        <div id="message" role="status" aria-live="polite"></div>
+        <div class="viewers" id="viewers">
+          <article class="viewer">
+            <div class="viewer-head">
+              <strong id="title-a">Escolha uma análise</strong
+              ><span id="size-a"></span>
+            </div>
+            <div class="image-wrap" id="wrap-a">
+              <div class="empty" id="empty-a">
+                <span>◎</span>
+                <h3>O próximo olhar é seu.</h3>
+                <p>
+                  Selecione uma área e uma data.<br />A imagem só será
+                  consultada ao clicar em Visualizar.
+                </p>
+              </div>
+              <img id="image-a" alt="Prévia da análise selecionada" hidden />
+            </div>
+            <div class="viewer-foot" id="info-a">Nenhuma imagem carregada.</div>
+          </article>
+          <article class="viewer" id="panel-b" hidden>
+            <div class="viewer-head">
+              <strong id="title-b"></strong><span id="size-b"></span>
+            </div>
+            <div class="image-wrap">
+              <img id="image-b" alt="Prévia da data de comparação" />
+            </div>
+            <div class="viewer-foot" id="info-b"></div>
+          </article>
+        </div>
+        <div class="tools">
+          <div>
+            <button id="zoom" class="secondary" disabled>
+              ＋ Aproximar centro</button
+            ><button id="reset" class="secondary" disabled>
+              ↺ Imagem inteira</button
+            ><span>Duplo clique na imagem para aproximar um ponto.</span>
+          </div>
+          <span id="crop-status">Recorte completo</span>
+        </div>
+        <div id="legend">
+          <span>Escala visual do índice</span>
+          <div class="ramp"></div>
+          <div class="ticks"><span>−1</span><span>0</span><span>+1</span></div>
+        </div>
+        <p class="caption">
+          Prévia por amostragem, sem classificação de risco. Áreas transparentes
+          não possuem amostras válidas. A data é a aquisição da imagem; não
+          indica quando o processamento executou ou se houve falha.
+        </p>
+      </section>
+      <footer>
+        <span>EMPEROR’S OCCULUS <b>·</b> PHYTOBLOOM</span
+        ><span>Imagens apenas em memória. Sem sincronização automática.</span>
+      </footer>
+    </main>
+  </body>
+</html>
