@@ -7,3 +7,8 @@ __pycache__/
 *.tiff
 *.nc
 artifacts/
+node_modules/
+dist/
+.sites-runtime/
+.sites-checkout/
+*.tar.gz

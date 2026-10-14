@@ -4,56 +4,68 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="occulus-token" content="__TOKEN__" />
-    <title>Emperor’s Occulus</title>
+    <title>Emperor’s Occulus · Machine Spirit</title>
     <link rel="icon" href="/static/icon.svg" />
+    <link rel="stylesheet" href="/static/vendor/leaflet.css" />
     <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/vendor/leaflet.js" defer></script>
+    <script src="/static/vendor/geotiff.js" defer></script>
+    <script src="/static/vendor/proj4.js" defer></script>
+    <script src="/static/vendor/googlemutant.js" defer></script>
+    <script src="/static/raster.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
   <body>
     <aside>
       <a class="brand" href="/"
         ><img src="/static/icon.svg" alt="" /><span
-          >EMPEROR’S<strong>OCCULUS</strong></span
+          >EMPEROR’S<strong>OCCULUS</strong
+          ><small>COGITATOR // PHYTOBLOOM</small></span
         ></a
       >
-      <div class="nav-label">OBSERVATÓRIO</div>
-      <div class="nav active">◉ <span>Phytobloom</span><small>01</small></div>
+      <div class="sigil" aria-hidden="true">⚙</div>
+      <div class="nav-label">ORDO HYDROLOGICA</div>
+      <div class="nav active">
+        <span>◉ PHYTOBLOOM</span><small>ONLINE</small>
+      </div>
       <p class="aside-note">
-        Um lugar para acompanhar<br />o que as águas revelam.
+        “The Machine Spirit watches.<br />The waters reveal.”
       </p>
       <div class="local">
-        <i></i> Ambiente local <span>Somente leitura</span>
+        <i></i> Espírito da Máquina
+        <span id="mode">Inicializando cogitador</span>
       </div>
+      <div class="seal">READ ONLY<br /><b>✦</b><br />DATA SANCTIFIED</div>
     </aside>
     <main>
       <header>
         <div>
-          <div class="eyebrow">ANÁLISES / PHYTOBLOOM</div>
-          <h1>Um olhar sobre a água.</h1>
-          <p>Explore os resultados publicados, área por área.</p>
+          <div class="eyebrow">NOOSPHERE / OBSERVATÓRIO GEOSPACIAL</div>
+          <h1>O espírito vigia as águas.</h1>
+          <p>Dados da Phytobloom. Coordenadas reais. Visão ampliada.</p>
         </div>
-        <button id="refresh" class="secondary">↻ Atualizar catálogo</button>
+        <button id="refresh" class="secondary">↻ Sincronizar catálogo</button>
       </header>
       <section class="stats" aria-label="Resumo">
         <div>
           <span>ÁREAS MONITORADAS</span><strong id="areas-count">—</strong>
         </div>
         <div>
-          <span>DATAS DISPONÍVEIS</span><strong id="dates-count">—</strong>
+          <span>DATAS DE AQUISIÇÃO</span><strong id="dates-count">—</strong>
         </div>
-        <div><span>ÚLTIMA AQUISIÇÃO</span><strong id="latest">—</strong></div>
+        <div><span>ÚLTIMA IMAGEM</span><strong id="latest">—</strong></div>
         <div>
-          <span>TRANSFERIDO NESTA SESSÃO</span
-          ><strong id="transfer">0 KB</strong>
+          <span>LEITURA RASTER NESTA SESSÃO</span
+          ><strong id="transfer">0 KiB</strong>
         </div>
       </section>
       <section class="workspace">
         <div class="section-title">
           <div>
             <span class="dot"></span>
-            <h2>Explorar análises</h2>
+            <h2>Auspex · visão orbital</h2>
           </div>
-          <span id="catalog-status">Conectando ao catálogo…</span>
+          <span id="catalog-status">Estabelecendo conexão…</span>
         </div>
         <div class="filters">
           <label>Área de interesse<select id="area"></select></label
@@ -71,67 +83,81 @@
               <option value="">Sem comparação</option>
             </select></label
           ><label
-            >Prévia<select id="quality">
-              <option value="96">Econômica · 96 linhas</option>
-              <option value="128" selected>Equilibrada · 128 linhas</option>
-              <option value="256">Detalhada · 256 linhas</option>
+            >Detalhe<select id="quality">
+              <option value="96">Econômico</option>
+              <option value="128" selected>Equilibrado</option>
+              <option value="256">Detalhado</option>
             </select></label
-          ><button id="load">Visualizar</button>
+          ><button id="load">Invocar visão</button>
         </div>
         <div id="message" role="status" aria-live="polite"></div>
-        <div class="viewers" id="viewers">
-          <article class="viewer">
-            <div class="viewer-head">
-              <strong id="title-a">Escolha uma análise</strong
-              ><span id="size-a"></span>
-            </div>
-            <div class="image-wrap" id="wrap-a">
-              <div class="empty" id="empty-a">
-                <span>◎</span>
-                <h3>O próximo olhar é seu.</h3>
-                <p>
-                  Selecione uma área e uma data.<br />A imagem só será
-                  consultada ao clicar em Visualizar.
-                </p>
-              </div>
-              <img id="image-a" alt="Prévia da análise selecionada" hidden />
-            </div>
-            <div class="viewer-foot" id="info-a">Nenhuma imagem carregada.</div>
-          </article>
-          <article class="viewer" id="panel-b" hidden>
-            <div class="viewer-head">
-              <strong id="title-b"></strong><span id="size-b"></span>
-            </div>
-            <div class="image-wrap">
-              <img id="image-b" alt="Prévia da data de comparação" />
-            </div>
-            <div class="viewer-foot" id="info-b"></div>
-          </article>
+        <div class="map-shell">
+          <div id="map" aria-label="Mapa georreferenciado das análises"></div>
+          <div class="map-badge">
+            <span class="dot"></span
+            ><strong id="map-title">AUSPEX EM ESPERA</strong
+            ><span id="map-subtitle"
+              >Selecione uma análise para projetá-la no mapa.</span
+            >
+          </div>
+          <div class="corner c1"></div>
+          <div class="corner c2"></div>
+          <div class="corner c3"></div>
+          <div class="corner c4"></div>
         </div>
         <div class="tools">
           <div>
-            <button id="zoom" class="secondary" disabled>
-              ＋ Aproximar centro</button
-            ><button id="reset" class="secondary" disabled>
-              ↺ Imagem inteira</button
-            ><span>Duplo clique na imagem para aproximar um ponto.</span>
+            <button id="fit" class="secondary" disabled>
+              ◎ Enquadrar análise</button
+            ><label
+              >Opacidade
+              <input
+                id="opacity"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value="0.75" /></label
+            ><label
+              >Mapa-base
+              <select id="basemap">
+                <option value="osm">OpenStreetMap · gratuito</option>
+                <option value="google" disabled>Google · requer chave</option>
+              </select></label
+            >
           </div>
-          <span id="crop-status">Recorte completo</span>
+          <span id="coordinates">—</span>
         </div>
-        <div id="legend">
-          <span>Escala visual do índice</span>
-          <div class="ramp"></div>
-          <div class="ticks"><span>−1</span><span>0</span><span>+1</span></div>
+        <div id="comparison" hidden>
+          <span id="comparison-label">Comparação temporal</span
+          ><label
+            >Data anterior
+            <input id="swipe" type="range" min="0" max="100" value="50" /> Data
+            principal</label
+          ><small
+            >Arraste o divisor para comparar as imagens nas mesmas
+            coordenadas.</small
+          >
+        </div>
+        <div class="legend-line">
+          <div id="legend">
+            <span>Escala visual do índice</span>
+            <div class="ramp"></div>
+            <div class="ticks">
+              <span>−1</span><span>0</span><span>+1</span>
+            </div>
+          </div>
+          <span id="read-info">Leitura parcial. Imagens em memória.</span>
         </div>
         <p class="caption">
-          Prévia por amostragem, sem classificação de risco. Áreas transparentes
-          não possuem amostras válidas. A data é a aquisição da imagem; não
-          indica quando o processamento executou ou se houve falha.
+          Arraste o mapa e use a roda do mouse ou os botões +/− para ampliar. Ao
+          aproximar, o trecho visível pode ganhar novas amostras. As cores são
+          uma visualização do índice, não uma classificação de risco.
         </p>
       </section>
       <footer>
-        <span>EMPEROR’S OCCULUS <b>·</b> PHYTOBLOOM</span
-        ><span>Imagens apenas em memória. Sem sincronização automática.</span>
+        <span>EMPEROR’S OCCULUS <b>✦</b> MACHINE SPIRIT INTERFACE</span
+        ><span>THE OMNISSIAH PROVIDES. THE DATA ENDURES.</span>
       </footer>
     </main>
   </body>

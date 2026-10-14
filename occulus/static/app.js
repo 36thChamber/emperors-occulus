@@ -1,47 +1,78 @@
 const $ = (id) => document.getElementById(id),
-  token = document.querySelector("meta[name=occulus-token]").content;
+  rawToken = document.querySelector("meta[name=occulus-token]").content;
+window.occulusHeaders = () =>
+  rawToken && rawToken !== "__TOKEN__" ? { "X-Occulus-Token": rawToken } : {};
 let items = [],
-  crop = [0, 0, 1, 1],
-  transferred = 0,
-  busy = false;
+  overlayA = null,
+  overlayB = null,
+  selection = null,
+  generation = 0,
+  controller = null,
+  refineTimer = null,
+  currentCrop = [0, 0, 1, 1],
+  googleLayer = null;
 const fmt = (b) =>
-  b >= 1048576
-    ? (b / 1048576).toFixed(2) + " MiB"
-    : (b / 1024).toFixed(1) + " KiB";
-const day = (d) => d.split("-").reverse().join("/");
-function msg(text, error = false) {
-  $("message").textContent = text;
+    b >= 1048576
+      ? (b / 1048576).toFixed(2) + " MiB"
+      : (b / 1024).toFixed(1) + " KiB",
+  day = (d) => d.split("-").reverse().join("/");
+const map = L.map("map", {
+  zoomControl: true,
+  maxZoom: 22,
+  zoomSnap: 0.25,
+  zoomDelta: 0.5,
+}).setView([-18.5, -47], 5);
+const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxNativeZoom: 19,
+  maxZoom: 22,
+  attribution:
+    '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>',
+}).addTo(map);
+function msg(t, error = false) {
+  $("message").textContent = t;
   $("message").classList.toggle("error", error);
 }
-async function api(path, options = {}) {
+async function api(path) {
   const r = await fetch(path, {
-    ...options,
-    headers: { "X-Occulus-Token": token, "Content-Type": "application/json" },
+    headers: window.occulusHeaders(),
     cache: "no-store",
   });
   const j = await r.json();
-  if (!r.ok)
-    throw Error(j.error || "Não foi possível consultar o serviço local.");
+  if (!r.ok) throw Error(j.error || "Falha de comunicação com o cogitador.");
   return j;
 }
 function options(el, values, placeholder) {
   el.replaceChildren();
   if (placeholder) el.add(new Option(placeholder, ""));
-  values.forEach(([value, label]) => el.add(new Option(label, value)));
+  values.forEach(([v, l]) => el.add(new Option(l, v)));
+}
+function removeLayers() {
+  generation++;
+  controller?.abort();
+  clearTimeout(refineTimer);
+  if (overlayA) map.removeLayer(overlayA);
+  if (overlayB) map.removeLayer(overlayB);
+  overlayA = overlayB = null;
+  selection = null;
+  $("fit").disabled = true;
+  $("comparison").hidden = true;
+  $("map-title").textContent = "AUSPEX EM ESPERA";
+  $("map-subtitle").textContent =
+    "Selecione Invocar visão para carregar a análise.";
 }
 function dates() {
   const area = $("area").value,
     product = $("product").value,
-    old = $("date").value;
-  const ds = [
-    ...new Set(
-      items
-        .filter((x) => x.area === area && x.product === product)
-        .map((x) => x.date),
-    ),
-  ]
-    .sort()
-    .reverse();
+    old = $("date").value,
+    ds = [
+      ...new Set(
+        items
+          .filter((x) => x.area === area && x.product === product)
+          .map((x) => x.date),
+      ),
+    ]
+      .sort()
+      .reverse();
   options(
     $("date"),
     ds.map((d) => [d, day(d)]),
@@ -52,34 +83,20 @@ function dates() {
     ds.map((d) => [d, day(d)]),
     "Sem comparação",
   );
-  invalidate();
+  removeLayers();
   $("load").disabled = !ds.length;
   msg(
     ds.length
-      ? "Escolha Visualizar para consultar a imagem."
-      : "Não há arquivos deste produto para esta área.",
+      ? "Cogitador pronto. Invoque a visão para carregar uma análise."
+      : "Não há arquivos para esta seleção.",
   );
-}
-function invalidate() {
-  crop = [0, 0, 1, 1];
-  $("image-a").hidden = true;
-  $("image-a").removeAttribute("src");
-  $("empty-a").hidden = false;
-  $("image-b").removeAttribute("src");
-  $("panel-b").hidden = true;
-  $("viewers").classList.remove("comparing");
-  $("zoom").disabled = $("reset").disabled = true;
-  $("title-a").textContent = "Escolha uma análise";
-  $("size-a").textContent = "";
-  $("info-a").textContent = "Nenhuma imagem carregada.";
-  $("crop-status").textContent = "Recorte completo";
 }
 async function catalog(refresh = false) {
   $("refresh").disabled = true;
-  msg("Consultando apenas os nomes e datas dos arquivos…");
+  msg("Sincronizando os registros da noosfera…");
   try {
-    const old = $("area").value;
-    const j = await api("/api/catalog" + (refresh ? "?refresh=1" : ""));
+    const old = $("area").value,
+      j = await api("/api/catalog" + (refresh ? "?refresh=1" : ""));
     items = j.items;
     const areas = [...new Set(items.map((x) => x.area))].sort(
       (a, b) => Number(a) - Number(b),
@@ -101,12 +118,7 @@ async function catalog(refresh = false) {
         )
       : "—";
     $("catalog-status").textContent =
-      items.length +
-      " arquivos · " +
-      new Date(j.updated * 1000).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      items.length + " arquivos · catálogo atualizado";
     dates();
   } catch (e) {
     msg(e.message, true);
@@ -114,116 +126,181 @@ async function catalog(refresh = false) {
     $("refresh").disabled = false;
   }
 }
-function setBusy(v) {
-  busy = v;
-  for (const id of [
-    "area",
-    "date",
-    "product",
-    "compare",
-    "quality",
-    "load",
-    "refresh",
-    "zoom",
-    "reset",
-  ])
-    $(id).disabled = v;
+function clip() {
+  if (!overlayB) return;
+  const el = overlayB.getElement(),
+    size = map.getSize(),
+    pos = map.containerPointToLayerPoint([
+      (size.x * Number($("swipe").value)) / 100,
+      0,
+    ]),
+    origin = L.DomUtil.getPosition(el);
+  const x = pos.x - origin.x;
+  el.style.clip = `rect(-100000px, ${x}px, 100000px, -100000px)`;
 }
-async function render(date, slot) {
+function apply(result, slot) {
+  let layer = slot === "a" ? overlayA : overlayB;
+  if (layer) map.removeLayer(layer);
+  layer = L.imageOverlay(result.url, result.bounds, {
+    opacity: Number($("opacity").value),
+    interactive: false,
+    zIndex: slot === "a" ? 10 : 11,
+  }).addTo(map);
+  if (slot === "a") overlayA = layer;
+  else overlayB = layer;
+  clip();
+}
+async function render(fit = false, crop = [0, 0, 1, 1]) {
+  const id = ++generation;
+  controller?.abort();
+  controller = new AbortController();
+  const signal = controller.signal;
   const item = items.find(
     (x) =>
       x.area === $("area").value &&
       x.product === $("product").value &&
-      x.date === date,
+      x.date === $("date").value,
   );
-  if (!item) throw Error("Arquivo indisponível para esta seleção.");
-  const j = await api("/api/preview", {
-    method: "POST",
-    body: JSON.stringify({
-      key: item.key,
-      resolution: Number($("quality").value),
-      crop,
-    }),
-  });
-  const m = j.metadata;
-  transferred += m.transferred;
-  $("transfer").textContent = fmt(transferred);
-  $("image-" + slot).src = "data:image/png;base64," + j.image;
-  $("image-" + slot).hidden = false;
-  $("title-" + slot).textContent =
-    "Área " + item.area + " · " + item.product + " · " + day(date);
-  $("size-" + slot).textContent = fmt(item.bytes) + " original";
-  $("info-" + slot).textContent =
-    m.previewWidth +
-    " × " +
-    m.previewHeight +
-    " amostras · " +
-    (m.cached ? "Reutilizada da memória" : fmt(m.transferred) + " lidos") +
-    (m.epsg ? " · EPSG:" + m.epsg : "");
-  return m;
-}
-async function load() {
-  if (busy) return;
-  setBusy(true);
-  msg("Lendo amostras da imagem. Isso pode levar alguns segundos…");
+  if (!item) return;
+  const compare = items.find(
+    (x) =>
+      x.area === item.area &&
+      x.product === item.product &&
+      x.date === $("compare").value,
+  );
+  $("load").disabled = true;
+  msg("O espírito processa a visão orbital…");
   try {
-    await render($("date").value, "a");
-    $("empty-a").hidden = true;
-    const compare = $("compare").value;
-    $("panel-b").hidden = !compare;
-    $("viewers").classList.toggle("comparing", !!compare);
-    if (compare) await render(compare, "b");
-    $("legend").hidden = $("product").value.startsWith("RGB");
-    $("crop-status").textContent =
-      crop[2] - crop[0] > 0.999
-        ? "Recorte completo"
-        : "Ampliação " + (1 / (crop[2] - crop[0])).toFixed(1) + "×";
-    msg("Prévia pronta. Os valores não são uma classificação de risco.");
+    const result = await OcculusRaster.preview(
+      item,
+      Number($("quality").value),
+      crop,
+      signal,
+    );
+    if (id !== generation) return;
+    apply(result, "a");
+    selection = result;
+    currentCrop = crop;
+    $("fit").disabled = false;
+    $("legend").hidden = item.product.startsWith("RGB");
+    $("map-title").textContent = `ÁREA ${item.area} // ${item.product}`;
+    $("map-subtitle").textContent =
+      `${day(item.date)} · EPSG:${result.meta.epsg} → mapa georreferenciado`;
+    if (compare) {
+      const cm = await OcculusRaster.header(compare, signal);
+      const viewportBounds = L.latLngBounds(result.bounds),
+        ccrop = OcculusRaster.cropForBounds(cm, viewportBounds) || [0, 0, 1, 1];
+      const cr = await OcculusRaster.preview(
+        compare,
+        Number($("quality").value),
+        ccrop,
+        signal,
+      );
+      if (id !== generation) return;
+      apply(cr, "b");
+      $("comparison").hidden = false;
+      $("comparison-label").textContent =
+        day(compare.date) + " ↔ " + day(item.date);
+    } else {
+      if (overlayB) map.removeLayer(overlayB);
+      overlayB = null;
+      $("comparison").hidden = true;
+    }
+    $("read-info").textContent =
+      `${result.size[0]} × ${result.size[1]} amostras · ${result.cached ? "em memória" : fmt(result.transferred) + " lidos"} · original ${fmt(item.bytes)}`;
+    if (fit) {
+      map.fitBounds(result.bounds, { padding: [35, 35], animate: false });
+      clearTimeout(refineTimer);
+    }
+    msg("Visão estabelecida. Arraste e amplie o mapa para explorar.");
   } catch (e) {
-    msg(e.message, true);
+    if (e.name !== "AbortError" && id === generation) msg(e.message, true);
   } finally {
-    setBusy(false);
-    const loaded = !$("image-a").hidden;
-    $("zoom").disabled = $("reset").disabled = !loaded;
+    if (id === generation) $("load").disabled = false;
   }
 }
-function zoom(cx = 0.5, cy = 0.5) {
-  if (busy || $("image-a").hidden) return;
-  const w = crop[2] - crop[0],
-    h = crop[3] - crop[1];
-  if (w < 1 / 64) return;
-  const nx = Math.max(0, Math.min(1 - w / 2, crop[0] + cx * w - w / 4)),
-    ny = Math.max(0, Math.min(1 - h / 2, crop[1] + cy * h - h / 4));
-  crop = [nx, ny, nx + w / 2, ny + h / 2];
-  load();
+function refine() {
+  clip();
+  if (!selection) return;
+  clearTimeout(refineTimer);
+  refineTimer = setTimeout(() => {
+    if (!selection) return;
+    const crop = OcculusRaster.cropForBounds(selection.meta, map.getBounds());
+    if (!crop) return;
+    // Reuse the full preview while zoomed out; refine only significant changes in visible crop.
+    if (crop.every((v, i) => Math.abs(v - currentCrop[i]) < 0.025)) return;
+    if (
+      (crop[2] - crop[0]) * (crop[3] - crop[1]) > 0.8 &&
+      currentCrop[2] - currentCrop[0] > 0.9
+    )
+      return;
+    render(false, crop);
+  }, 1000);
 }
-$("refresh").onclick = () => catalog(true);
+map.on("moveend", refine);
+map.on("move zoom", clip);
+map.on(
+  "mousemove",
+  (e) =>
+    ($("coordinates").textContent =
+      e.latlng.lat.toFixed(5) + "°, " + e.latlng.lng.toFixed(5) + "°"),
+);
 $("area").onchange = dates;
 $("product").onchange = dates;
 $("date").onchange = () => {
-  invalidate();
-  msg("Seleção alterada. Clique em Visualizar.");
+  removeLayers();
+  msg("Nova data selecionada. Invoque a visão.");
 };
 $("compare").onchange = () => {
-  invalidate();
-  msg("Clique em Visualizar para carregar a comparação.");
+  if (selection) render(false, currentCrop);
 };
-$("load").onclick = load;
-$("zoom").onclick = () => zoom();
-$("reset").onclick = () => {
-  crop = [0, 0, 1, 1];
-  load();
+$("load").onclick = () => render(true);
+$("refresh").onclick = () => catalog(true);
+$("fit").onclick = () => {
+  if (selection) map.fitBounds(selection.bounds, { padding: [35, 35] });
 };
-$("image-a").ondblclick = (e) => {
-  const r = e.target.getBoundingClientRect(),
-    scale = Math.min(
-      r.width / e.target.naturalWidth,
-      r.height / e.target.naturalHeight,
-    ),
-    w = e.target.naturalWidth * scale,
-    h = e.target.naturalHeight * scale,
-    x = (e.clientX - r.left - (r.width - w) / 2) / w,
-    y = (e.clientY - r.top - (r.height - h) / 2) / h;
-  if (x >= 0 && x <= 1 && y >= 0 && y <= 1) zoom(x, y);
+$("quality").onchange = () => {
+  if (selection) render(false, currentCrop);
 };
-catalog();
+$("opacity").oninput = () => {
+  overlayA?.setOpacity(Number($("opacity").value));
+  overlayB?.setOpacity(Number($("opacity").value));
+};
+$("swipe").oninput = clip;
+window.addEventListener(
+  "rasterbytes",
+  (e) => ($("transfer").textContent = fmt(e.detail)),
+);
+(async () => {
+  try {
+    const config = await api("/api/config");
+    $("mode").textContent = config.hosted
+      ? "Hospedado · acesso privado"
+      : "Cogitador local · somente leitura";
+    if (config.googleMapsKey) {
+      const script = document.createElement("script");
+      script.src =
+        "https://maps.googleapis.com/maps/api/js?key=" +
+        encodeURIComponent(config.googleMapsKey) +
+        "&loading=async";
+      script.onload = () => {
+        googleLayer = L.gridLayer.googleMutant({ type: "hybrid", maxZoom: 22 });
+        $("basemap").options[1].disabled = false;
+      };
+      document.head.append(script);
+    }
+  } catch (e) {
+    msg(e.message, true);
+  }
+  catalog();
+})();
+$("basemap").onchange = () => {
+  if ($("basemap").value === "google" && googleLayer) {
+    map.removeLayer(osm);
+    googleLayer.addTo(map);
+  } else {
+    if (googleLayer) map.removeLayer(googleLayer);
+    osm.addTo(map);
+  }
+};
+window.occulusMap = map;

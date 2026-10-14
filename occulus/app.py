@@ -1,7 +1,7 @@
 import base64, os, secrets, json, subprocess
 from flask import Flask, request, jsonify, abort, send_from_directory
 from botocore.exceptions import BotoCoreError, ClientError
-from .core import Catalog
+from .core import Catalog, fetch_range
 
 
 def wsl_network():
@@ -47,7 +47,7 @@ def create_app(catalog=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+            "default-src 'self'; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://*.google.com https://*.googleapis.com https://*.gstatic.com; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; style-src 'self' 'unsafe-inline'; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.google.com; frame-ancestors 'none'"
         )
         return response
 
@@ -61,6 +61,25 @@ def create_app(catalog=None):
     @app.get("/health")
     def health():
         return {"app": "emperors-occulus", "status": "ok"}
+
+    @app.get("/api/config")
+    def config():
+        return {"googleMapsKey": os.getenv("GOOGLE_MAPS_API_KEY", ""), "hosted": False}
+
+    @app.get("/api/range")
+    def partial():
+        key = request.args.get("key", "")
+        item = catalog.items.get(key)
+        if not item:
+            raise ValueError("Arquivo não encontrado no catálogo.")
+        start, end = int(request.args["start"]), int(request.args["end"])
+        if start < 0 or end < start or end - start + 1 > 262144:
+            raise ValueError("Intervalo inválido.")
+        end = min(end, item["bytes"] - 1)
+        if start > end:
+            raise ValueError("Intervalo fora do arquivo.")
+        data = fetch_range(catalog.s3, catalog.bucket, key, start, end, item["etag"])
+        return app.response_class(data, mimetype="application/octet-stream")
 
     @app.get("/api/catalog")
     def listing():
@@ -116,4 +135,4 @@ if __name__ == "__main__":
     listeners = f"127.0.0.1:{port}"
     if wsl_ip:
         listeners += f" {wsl_ip}:{port}"
-    serve(create_app(), listen=listeners, threads=4)
+    serve(create_app(), listen=listeners, threads=16)
