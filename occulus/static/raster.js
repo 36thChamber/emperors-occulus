@@ -19,11 +19,21 @@ window.OcculusRaster = (() => {
       end: String(end),
       etag: item.etag,
     });
-    const r = await fetch("/api/range?" + q, {
-      headers: window.occulusHeaders(),
-      signal,
-      cache: "no-store",
-    });
+    let r;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        r = await fetch("/api/range?" + q, {
+          headers: window.occulusHeaders(),
+          signal,
+          cache: "no-store",
+        });
+        if (![502, 503, 504].includes(r.status) || attempt === 2) break;
+        await r.body?.cancel();
+      } catch (error) {
+        if (error.name === "AbortError" || attempt === 2) throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+    }
     if (!r.ok) {
       let e;
       try {
