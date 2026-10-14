@@ -1,8 +1,13 @@
 param(
   [string]$Distro = 'Ubuntu',
-  [string]$ProjectPath = '/home/chamber/projects/emperors-occulus'
+  [string]$ProjectPath = '/home/chamber/projects/emperors-occulus',
+  [switch]$Local
 )
 $ErrorActionPreference = 'Stop'
+if (-not $Local) {
+  Start-Process 'https://emperors-occulus.copperbowl512.chatgpt.site'
+  exit 0
+}
 if ($ProjectPath -notmatch '^/[a-zA-Z0-9_./-]+$' -or $Distro -notmatch '^[a-zA-Z0-9_.-]+$') { throw 'Caminho ou distribuição inválidos.' }
 & wsl.exe -d $Distro -- bash "$ProjectPath/scripts/launch.sh"
 if ($LASTEXITCODE -ne 0) { throw 'Não foi possível iniciar o serviço no WSL.' }

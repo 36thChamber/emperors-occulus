@@ -21,7 +21,7 @@ cd /home/chamber/projects/emperors-occulus
 ./scripts/launch.sh
 ```
 
-Abra `http://localhost:8765`. Se o Windows não encaminhar localhost para o WSL, use `http://<IP-do-WSL>:8765`; consulte o IP com `hostname -I`. O serviço systemd do usuário permanece ativo fora do terminal e reinicia após falhas. O atalho detecta localhost e o IP atual ao abrir.
+Abra `http://localhost:8765`. Se o Windows não encaminhar localhost para o WSL, use `http://<IP-do-WSL>:8765`; consulte o IP com `hostname -I`. O serviço systemd do usuário permanece ativo fora do terminal e reinicia após falhas. O atalho abre a versão hospedada por padrão. Para usar a versão local, execute `scripts/launch-windows.ps1 -Local`; nesse modo ele detecta localhost e o IP atual ao abrir.
 
 Crie ou atualize o ícone executando pelo Explorador do Windows:
 
@@ -39,7 +39,7 @@ Logs: `journalctl --user -u emperors-occulus.service`. O serviço inicia sob dem
 
 ## Hospedagem privada
 
-A versão hospedada usa um Worker ESM e acesso privado gerenciado por Sites. Nenhuma EC2 adicional é criada. O frontend, bibliotecas e APIs estão no mesmo domínio, com mapa-base externo. O domínio implantado aparece no resultado da publicação e nas informações do Site.
+A versão hospedada usa um Worker ESM e acesso privado gerenciado por Sites. Nenhuma EC2 adicional é criada. O frontend, bibliotecas e APIs estão no mesmo domínio, com mapa-base externo. URL do Site: https://emperors-occulus.copperbowl512.chatgpt.site. O acesso é privado e exige a conta autorizada do ChatGPT.
 
 Segredos em Sites: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Configuração: `AWS_REGION=sa-east-1`, `S3_BUCKET=copel-siapesq`; `GOOGLE_MAPS_API_KEY` é opcional. As credenciais AWS do site pertencem a um usuário exclusivo, limitado a `ListBucket` no bucket e `GetObject` nos TIFFs. Não use credenciais administrativas. Não altere a audiência privada sem avaliar acesso aos dados e custos.
 
