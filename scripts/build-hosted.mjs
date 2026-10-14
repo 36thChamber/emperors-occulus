@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 const root = process.cwd(),
   dir = path.join(root, "occulus/static"),
   assets = {};
@@ -27,6 +28,14 @@ assets["/"] = {
     .replace("__TOKEN__", ""),
   type: "text/html",
 };
+const revision = createHash("sha256")
+  .update(JSON.stringify(assets))
+  .digest("hex")
+  .slice(0, 12);
+assets["/"].body = assets["/"].body.replace(
+  /((?:src|href)="\/static\/[^"?]+)(")/g,
+  `$1?v=${revision}$2`,
+);
 const api = fs
   .readFileSync("hosted/worker/api.js", "utf8")
   .replace("export async function api", "async function api");
