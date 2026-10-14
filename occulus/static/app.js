@@ -242,13 +242,15 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
   );
   $("load").disabled = true;
   msg("O espírito processa a visão orbital…");
+  let pendingMeta = null;
   try {
+    pendingMeta = await OcculusRaster.header(item, signal);
     if (
       fit &&
       activeModule() === "siapresp" &&
       $("region").value === "atlantic"
     ) {
-      const meta = await OcculusRaster.header(item, signal);
+      const meta = pendingMeta;
       crop =
         OcculusRaster.cropForBounds(
           meta,
@@ -309,7 +311,15 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
     }
     msg("Visão estabelecida. Arraste e amplie o mapa para explorar.");
   } catch (e) {
-    if (e.name !== "AbortError" && id === generation) msg(e.message, true);
+    if (e.name !== "AbortError" && id === generation) {
+      if (pendingMeta && e.message.includes("16 MiB") && !selection) {
+        // Keep only georeferencing after a budget refusal: zoom can retry a
+        // smaller viewport without first downloading the full raster.
+        selection = { meta: pendingMeta };
+        currentCrop = crop;
+      }
+      msg(e.message, true);
+    }
   } finally {
     if (id === generation) $("load").disabled = false;
   }
