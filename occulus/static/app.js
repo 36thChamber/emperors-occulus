@@ -10,7 +10,8 @@ let items = [],
   controller = null,
   refineTimer = null,
   currentCrop = [0, 0, 1, 1],
-  googleLayer = null;
+  googleLayer = null,
+  googleSatelliteLayer = null;
 const fmt = (b) =>
     b >= 1048576
       ? (b / 1048576).toFixed(2) + " MiB"
@@ -284,8 +285,44 @@ window.addEventListener(
         encodeURIComponent(config.googleMapsKey) +
         "&loading=async";
       script.onload = () => {
-        googleLayer = L.gridLayer.googleMutant({ type: "hybrid", maxZoom: 22 });
+        googleLayer = L.gridLayer.googleMutant({
+          type: "roadmap",
+          maxZoom: 22,
+          styles: [
+            { elementType: "geometry", stylers: [{ color: "#06140b" }] },
+            {
+              elementType: "labels.text.fill",
+              stylers: [{ color: "#76cb92" }],
+            },
+            {
+              elementType: "labels.text.stroke",
+              stylers: [{ color: "#020904" }],
+            },
+            {
+              featureType: "road",
+              elementType: "geometry",
+              stylers: [{ color: "#205a33" }],
+            },
+            {
+              featureType: "road.highway",
+              elementType: "geometry",
+              stylers: [{ color: "#357e49" }],
+            },
+            {
+              featureType: "water",
+              elementType: "geometry",
+              stylers: [{ color: "#010603" }],
+            },
+            { featureType: "poi", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", stylers: [{ visibility: "off" }] },
+          ],
+        });
+        googleSatelliteLayer = L.gridLayer.googleMutant({
+          type: "satellite",
+          maxZoom: 22,
+        });
         $("basemap").options[1].disabled = false;
+        $("basemap").options[2].disabled = false;
       };
       document.head.append(script);
     }
@@ -295,12 +332,32 @@ window.addEventListener(
   catalog();
 })();
 $("basemap").onchange = () => {
-  if ($("basemap").value === "google" && googleLayer) {
-    map.removeLayer(osm);
-    googleLayer.addTo(map);
-  } else {
-    if (googleLayer) map.removeLayer(googleLayer);
-    osm.addTo(map);
+  map.removeLayer(osm);
+  if (googleLayer) map.removeLayer(googleLayer);
+  if (googleSatelliteLayer) map.removeLayer(googleSatelliteLayer);
+  const selected = $("basemap").value;
+  $("map").classList.toggle("google-crt", selected.startsWith("google"));
+  if (selected === "google" && googleLayer) googleLayer.addTo(map);
+  else if (selected === "google-satellite" && googleSatelliteLayer)
+    googleSatelliteLayer.addTo(map);
+  else osm.addTo(map);
+};
+$("fullscreen").onclick = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await $("map-shell").requestFullscreen();
+  } catch {
+    msg("Este navegador não permite tela inteira. O mapa continua disponível.");
   }
 };
+document.addEventListener("fullscreenchange", () => {
+  $("fullscreen").setAttribute(
+    "aria-label",
+    document.fullscreenElement
+      ? "Sair da tela inteira"
+      : "Ampliar mapa para tela inteira",
+  );
+  map.invalidateSize({ pan: false });
+});
+new ResizeObserver(() => map.invalidateSize({ pan: false })).observe($("map"));
 window.occulusMap = map;

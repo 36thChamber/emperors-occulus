@@ -1,6 +1,6 @@
 # Emperor’s Occulus — Machine Spirit
 
-Observatório geoespacial das análises da Phytobloom: mapa interativo, TIFFs nas coordenadas reais, zoom livre, controle de opacidade e comparação temporal com divisor. A estética do cogitador usa metal escuro, latão e indicadores verdes, inspirada no conceito de Machine Spirit.
+Observatório geoespacial das análises da Phytobloom: mapa interativo, TIFFs nas coordenadas reais, zoom livre, controle de opacidade e comparação temporal com divisor. A interface usa estética de terminal CRT monocromático com fósforo verde, tipografia monoespaçada, brilho leve e scanlines estáticas. O mapa ocupa a maior parte da tela e pode ser ampliado para tela inteira. O filtro afeta somente o mapa-base; as cores dos índices e das análises permanecem originais.
 
 A integração atual consulta os produtos NDCI, NDVI, NDVI2, RGB e RGB com máscara no bucket privado `copel-siapesq`. Não executa análises nem avalia sucesso dos jobs.
 
@@ -12,7 +12,7 @@ O GeoTIFF fornece origem, tamanho dos pixels e EPSG. As amostras são reprojetad
 
 As prévias usam amostragem pontual, não médias: feições estreitas podem não aparecer até aproximar. NDCI/NDVI/NDVI2 usam escala visual fixa −1 a +1, sem classificação de risco ou concentração. RGB usa contraste dos percentis 2–98 de cada prévia; diferenças de brilho não são comparações quantitativas. NaN/NoData ficam transparentes; RGB inteiramente zero é tratado como fundo. Data do arquivo é a aquisição da imagem, não a execução do job.
 
-Para usar Google Maps, configure `GOOGLE_MAPS_API_KEY` no ambiente local ou hospedado e habilite a Maps JavaScript API. A opção Google passa a ficar disponível na interface. A chave de mapa é destinada ao navegador: restrinja-a aos domínios da aplicação e à API necessária no Google Cloud. Google exige faturamento habilitado e pode cobrar conforme uso; a opção não é ativada sem configuração.
+Para usar Google Maps, configure `GOOGLE_MAPS_API_KEY` no ambiente local ou hospedado e habilite a Maps JavaScript API. As opções Google ruas e Google satélite passam a ficar disponíveis na interface. Ruas usa estilos nativos em verde e preto; satélite recebe filtro visual de fósforo verde. OpenStreetMap também recebe o filtro CRT. A chave de mapa é destinada ao navegador: restrinja-a aos domínios da aplicação e à API necessária no Google Cloud. Google exige faturamento habilitado e pode cobrar conforme uso; a opção não é ativada sem configuração.
 
 ## Acesso local no Windows/WSL
 
