@@ -7,14 +7,14 @@ if ($ProjectPath -notmatch '^/[a-zA-Z0-9_./-]+$' -or $Distro -notmatch '^[a-zA-Z
 $installDir = Join-Path $env:LOCALAPPDATA 'EmperorsOcculus'
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 $launcher = Join-Path $installDir 'launch.vbs'
+$windowsScript = Join-Path $installDir 'launch-windows.ps1'
+$scriptSource = "\\wsl.localhost\$Distro$($ProjectPath.Replace('/', '\'))\scripts\launch-windows.ps1"
+Copy-Item -LiteralPath $scriptSource -Destination $windowsScript -Force
+$command = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $windowsScript + '" -Distro "' + $Distro + '" -ProjectPath "' + $ProjectPath + '"'
+$escapedCommand = $command.Replace('"', '""')
 $vbs = @"
 Set shell = CreateObject("WScript.Shell")
-result = shell.Run("wsl.exe -d $Distro -- bash $ProjectPath/scripts/launch.sh", 0, True)
-If result = 0 Then
-  shell.Run "http://localhost:8765", 1, False
-Else
-  MsgBox "Não foi possível iniciar o Emperor's Occulus. Confira o WSL e a instalação.", 16, "Emperor's Occulus"
-End If
+shell.Run "$escapedCommand", 0, False
 "@
 Set-Content -Path $launcher -Value $vbs -Encoding Unicode
 $iconSource = "\\wsl.localhost\$Distro$($ProjectPath.Replace('/', '\'))\occulus\static\icon.ico"

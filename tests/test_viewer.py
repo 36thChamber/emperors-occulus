@@ -128,3 +128,37 @@ def test_local_api_security():
         ).status_code
         == 400
     )
+
+
+def test_wsl_access_restricts_clients(monkeypatch):
+    import occulus.app as module
+
+    monkeypatch.setattr(
+        module, "wsl_network", lambda: ("192.168.170.234", "192.168.160.1")
+    )
+    c, _, _ = fixture()
+    client = module.create_app(c).test_client()
+    assert (
+        client.get(
+            "/health",
+            base_url="http://192.168.170.234:8765",
+            environ_overrides={"REMOTE_ADDR": "192.168.160.1"},
+        ).status_code
+        == 200
+    )
+    assert (
+        client.get(
+            "/health",
+            base_url="http://192.168.170.234:8765",
+            environ_overrides={"REMOTE_ADDR": "192.168.160.22"},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.get(
+            "/health",
+            base_url="http://untrusted.example:8765",
+            environ_overrides={"REMOTE_ADDR": "192.168.160.1"},
+        ).status_code
+        == 403
+    )

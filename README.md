@@ -9,7 +9,7 @@ cd /home/chamber/projects/emperors-occulus
 ./scripts/launch.sh
 ```
 
-Abra **http://localhost:8765** no Windows. Selecione área, produto e data e clique em **Visualizar**. O catálogo abre sem ler imagens. Duplo clique na imagem aproxima o ponto escolhido. A comparação usa o mesmo recorte relativo nas duas datas, não um alinhamento geográfico entre arquivos de grades diferentes.
+Abra **http://localhost:8765** no Windows. Se o encaminhamento do localhost estiver indisponível, use o IP retornado por `hostname -I` no WSL, seguido de `:8765` (por exemplo `http://192.168.170.234:8765`). O IP pode mudar quando o WSL reinicia. O atalho testa localhost e os IPs atuais antes de abrir o navegador. Selecione área, produto e data e clique em **Visualizar**. O catálogo abre sem ler imagens. Duplo clique na imagem aproxima o ponto escolhido. A comparação usa o mesmo recorte relativo nas duas datas, não um alinhamento geográfico entre arquivos de grades diferentes.
 
 Para criar o ícone na área de trabalho do Windows, execute no **PowerShell do Windows**:
 
@@ -66,7 +66,7 @@ Exemplo medido em 13/10/2026, qualidade econômica: `165_2026_10_09_NDCI.tif` (1
 
 ## Segurança e arquitetura
 
-O servidor escuta somente em `127.0.0.1`. Host é validado, APIs exigem token por sessão, não há CORS e o navegador não recebe credenciais AWS nem URLs assinadas. Somente chaves encontradas no catálogo podem ser consultadas; `IfMatch` impede misturar versões durante a leitura. Não publique esse servidor diretamente na internet.
+O lançador mantém o servidor em um serviço systemd do usuário, iniciado sob demanda e com reinício em caso de falha. Ele escuta em `127.0.0.1` e no IP da interface do WSL. As conexões são aceitas apenas do loopback, do próprio IP do WSL ou do gateway Windows; Host é validado, APIs exigem token por sessão, não há CORS e o navegador não recebe credenciais AWS nem URLs assinadas. Somente chaves encontradas no catálogo podem ser consultadas; `IfMatch` impede misturar versões durante a leitura. Não publique esse servidor diretamente na internet.
 
 - `occulus/core.py`: provedor S3, parser do catálogo e leitor de intervalos com orçamento de transferência.
 - `occulus/app.py`: API local e arquivos estáticos.
@@ -84,3 +84,5 @@ O servidor escuta somente em `127.0.0.1`. Host é validado, APIs exigem token po
 ```
 
 Também foram exercitados o catálogo real, NDCI/RGB do ID 165, aproximação, comparação e layout móvel no Chromium. Testes automatizados usam S3 simulado e não consomem AWS. Dependências exatas do ambiente validado estão em `requirements.lock.txt`.
+
+Para consultar o serviço local: `systemctl --user status emperors-occulus.service`. Logs: `journalctl --user -u emperors-occulus.service`. O serviço não é habilitado automaticamente no boot; o atalho inicia quando necessário.

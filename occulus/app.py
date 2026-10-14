@@ -1,7 +1,17 @@
-import base64, os, secrets
+import base64, os, secrets, json, subprocess
 from flask import Flask, request, jsonify, abort, send_from_directory
 from botocore.exceptions import BotoCoreError, ClientError
 from .core import Catalog
+
+
+def wsl_network():
+    if os.getenv("OCCULUS_WSL_ACCESS") != "1":
+        return None, None
+    routes = json.loads(
+        subprocess.check_output(["ip", "-j", "route", "get", "1.1.1.1"])
+    )
+    route = routes[0]
+    return route.get("prefsrc"), route.get("gateway")
 
 
 def create_app(catalog=None):
@@ -9,10 +19,21 @@ def create_app(catalog=None):
     app.config["MAX_CONTENT_LENGTH"] = 4096
     catalog = catalog or Catalog()
     token = secrets.token_urlsafe(32)
+    wsl_ip, gateway = wsl_network()
+    allowed_hosts = {"127.0.0.1", "localhost", "[::1]"}
+    allowed_clients = {"127.0.0.1", "::1"}
+    if wsl_ip:
+        allowed_hosts.add(wsl_ip)
+        allowed_clients.add(wsl_ip)
+    if gateway:
+        allowed_clients.add(gateway)
 
     @app.before_request
     def local_only():
-        if request.host.split(":")[0] not in ("127.0.0.1", "localhost", "[::1]"):
+        if (
+            request.host.rsplit(":", 1)[0] not in allowed_hosts
+            or request.remote_addr not in allowed_clients
+        ):
             abort(403)
         if (
             request.path.startswith("/api/")
@@ -90,9 +111,9 @@ def create_app(catalog=None):
 if __name__ == "__main__":
     from waitress import serve
 
-    serve(
-        create_app(),
-        host="127.0.0.1",
-        port=int(os.getenv("OCCULUS_PORT", "8765")),
-        threads=4,
-    )
+    port = int(os.getenv("OCCULUS_PORT", "8765"))
+    wsl_ip, _ = wsl_network()
+    listeners = f"127.0.0.1:{port}"
+    if wsl_ip:
+        listeners += f" {wsl_ip}:{port}"
+    serve(create_app(), listen=listeners, threads=4)
