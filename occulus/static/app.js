@@ -276,7 +276,7 @@ window.addEventListener(
   try {
     const config = await api("/api/config");
     $("mode").textContent = config.hosted
-      ? "Hospedado · acesso privado"
+      ? "Hospedado · acesso livre"
       : "Cogitador local · somente leitura";
     if (config.googleMapsKey) {
       const script = document.createElement("script");

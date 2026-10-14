@@ -37,11 +37,11 @@ O instalador coloca o atalho `.lnk` no Desktop real do Windows, inclusive com On
 
 Logs: `journalctl --user -u emperors-occulus.service`. O serviço inicia sob demanda, não é habilitado no boot. O acesso local aceita apenas loopback, IP do próprio WSL e gateway Windows, com validação de Host e token na API.
 
-## Hospedagem privada
+## Hospedagem pública
 
-A versão hospedada usa um Worker ESM e acesso privado gerenciado por Sites. Nenhuma EC2 adicional é criada. O frontend, bibliotecas e APIs estão no mesmo domínio, com mapa-base externo. URL do Site: https://emperors-occulus.copperbowl512.chatgpt.site. O acesso é privado e exige a conta autorizada do ChatGPT.
+A versão hospedada usa um Worker ESM e acesso público gerenciado por Sites. Nenhuma EC2 adicional é criada. O frontend, bibliotecas e APIs estão no mesmo domínio, com mapa-base externo. URL do Site: https://emperors-occulus.copperbowl512.chatgpt.site. O acesso é livre, sem login, por solicitação do proprietário.
 
-Segredos em Sites: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Configuração: `AWS_REGION=sa-east-1`, `S3_BUCKET=copel-siapesq`; `GOOGLE_MAPS_API_KEY` é opcional. As credenciais AWS do site pertencem a um usuário exclusivo, limitado a `ListBucket` no bucket e `GetObject` nos TIFFs. Não use credenciais administrativas. Não altere a audiência privada sem avaliar acesso aos dados e custos.
+Segredos em Sites: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Configuração: `AWS_REGION=sa-east-1`, `S3_BUCKET=copel-siapesq`; `GOOGLE_MAPS_API_KEY` é opcional. As credenciais AWS do site pertencem a um usuário exclusivo, limitado a `ListBucket` no bucket e `GetObject` nos TIFFs. Não use credenciais administrativas. Os visitantes podem consultar as análises publicadas; o bucket permanece privado e as credenciais AWS ficam exclusivamente no servidor.
 
 O Worker assina chamadas S3 usando SigV4; a assinatura e os segredos não chegam ao navegador. O catálogo é mantido em memória por até dez minutos; atualização explícita pode renová-lo após um minuto. Cada intervalo exige nome de TIFF válido, limita a leitura a 256 KiB e verifica a versão do arquivo pelo ETag. O navegador lê cabeçalhos de até 256 KiB e apenas as linhas necessárias, com oito consultas simultâneas.
 
@@ -74,3 +74,5 @@ npm test
 - `tests/worker.test.mjs` e `tests/test_viewer.py`: verificações com dados simulados, sem custo AWS.
 
 Para futuras famílias de análise, adicione um provedor de catálogo/produtos e uma entrada de navegação. Phytobloom é o primeiro módulo. As bibliotecas vendorizadas mantêm suas licenças em `occulus/static/vendor/licenses/`.
+
+O emblema é uma cruz com caveira central em fósforo verde, desenhada em SVG. Para regenerar o ícone Windows: `.venv/bin/python scripts/generate_icon.py`.
