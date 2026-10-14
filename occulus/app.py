@@ -2,6 +2,7 @@ import base64, os, secrets, json, subprocess
 from flask import Flask, request, jsonify, abort, send_from_directory
 from botocore.exceptions import BotoCoreError, ClientError
 from .core import Catalog, fetch_range
+from .modules import ModuleCatalog
 
 
 def wsl_network():
@@ -18,6 +19,18 @@ def create_app(catalog=None):
     app = Flask(__name__, static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = 4096
     catalog = catalog or Catalog()
+    catalogs = {
+        "phytobloom": catalog,
+        "ste": ModuleCatalog("ste", catalog.s3),
+        "siapresp": ModuleCatalog("siapresp", catalog.s3),
+    }
+
+    def selected_catalog():
+        module = request.args.get("module", "phytobloom")
+        if module not in catalogs:
+            raise ValueError("Módulo inválido.")
+        return catalogs[module]
+
     token = secrets.token_urlsafe(32)
     wsl_ip, gateway = wsl_network()
     allowed_hosts = {"127.0.0.1", "localhost", "[::1]"}
@@ -69,7 +82,8 @@ def create_app(catalog=None):
     @app.get("/api/range")
     def partial():
         key = request.args.get("key", "")
-        item = catalog.items.get(key)
+        selected = selected_catalog()
+        item = selected.items.get(key)
         if not item:
             raise ValueError("Arquivo não encontrado no catálogo.")
         start, end = int(request.args["start"]), int(request.args["end"])
@@ -78,12 +92,12 @@ def create_app(catalog=None):
         end = min(end, item["bytes"] - 1)
         if start > end:
             raise ValueError("Intervalo fora do arquivo.")
-        data = fetch_range(catalog.s3, catalog.bucket, key, start, end, item["etag"])
+        data = fetch_range(selected.s3, selected.bucket, key, start, end, item["etag"])
         return app.response_class(data, mimetype="application/octet-stream")
 
     @app.get("/api/catalog")
     def listing():
-        return jsonify(catalog.list(request.args.get("refresh") == "1"))
+        return jsonify(selected_catalog().list(request.args.get("refresh") == "1"))
 
     @app.post("/api/preview")
     def preview():

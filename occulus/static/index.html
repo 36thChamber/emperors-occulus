@@ -13,6 +13,7 @@
     <script src="/static/vendor/proj4.js" defer></script>
     <script src="/static/vendor/googlemutant.js" defer></script>
     <script src="/static/raster.js" defer></script>
+    <script src="/static/modules.js" defer></script>
     <script src="/static/app.js" defer></script>
   </head>
   <body>
@@ -24,6 +25,14 @@
           ></span
         ></a
       >
+      <label class="module-picker"
+        ><span>MÓDULO</span
+        ><select id="module" aria-label="Módulo de análises">
+          <option value="phytobloom">Phytobloom</option>
+          <option value="ste">SIAPESQ STE</option>
+          <option value="siapresp">SIAPRESP</option>
+        </select></label
+      >
       <div class="terminal-state">
         <span class="dot"></span><span id="mode">INICIALIZANDO COGITADOR</span>
       </div>
@@ -32,8 +41,14 @@
     <main>
       <section class="workspace" aria-label="Observatório Phytobloom">
         <div class="filters">
-          <label>Área<select id="area"></select></label
-          ><label
+          <label
+            ><span id="area-label">Área</span
+            ><select id="area"></select></label
+          ><label id="region-control" hidden
+            ><span>Recorte / conjunto</span
+            ><select id="region"></select
+          ></label>
+          <label
             >Produto<select id="product">
               <option value="NDCI">NDCI · clorofila</option>
               <option value="NDVI">NDVI · vegetação</option>
@@ -41,7 +56,9 @@
               <option value="RGB">RGB · cor natural</option>
               <option value="RGB_MASK">RGB · com máscara</option>
             </select></label
-          ><label>Data<select id="date"></select></label
+          ><label
+            ><span id="date-label">Data</span
+            ><select id="date"></select></label
           ><label
             >Comparar<select id="compare">
               <option value="">Sem comparação</option>
@@ -78,10 +95,11 @@
             [ ]
           </button>
           <div class="map-legend" id="legend">
-            <span>ÍNDICE / CORES ORIGINAIS</span>
+            <span><span id="legend-label">ÍNDICE / CORES ORIGINAIS</span></span>
             <div class="ramp"></div>
             <div class="ticks">
-              <span>−1</span><span>0</span><span>+1</span>
+              <span id="legend-min">−1</span><span id="legend-mid">0</span
+              ><span id="legend-max">+1</span>
             </div>
           </div>
           <div class="map-coordinates" id="coordinates">—</div>
@@ -124,12 +142,14 @@
       </section>
     </main>
     <footer class="telemetry">
-      <span><b id="areas-count">—</b> ÁREAS</span
-      ><span><b id="dates-count">—</b> DATAS</span
-      ><span>ÚLTIMA <b id="latest">—</b></span
+      <span><b id="areas-count">—</b> <span id="entity-label">ÁREAS</span></span
+      ><span
+        ><b id="dates-count">—</b> <span id="period-label">DATAS</span></span
+      ><span><span id="latest-label">ÚLTIMA</span> <b id="latest">—</b></span
       ><span>LIDOS <b id="transfer">0 KiB</b></span
       ><span class="telemetry-note"
-        >PHYTOBLOOM // LEITURA PARCIAL // THE MACHINE SPIRIT WATCHES</span
+        ><span id="module-note">PHYTOBLOOM</span> // LEITURA PARCIAL // THE
+        MACHINE SPIRIT WATCHES</span
       >
     </footer>
   </body>

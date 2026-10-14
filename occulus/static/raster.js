@@ -15,6 +15,7 @@ window.OcculusRaster = (() => {
     end = Math.min(end, item.bytes - 1);
     const q = new URLSearchParams({
       key: item.key,
+      module: item.module || "phytobloom",
       start: String(start),
       end: String(end),
       etag: item.etag,
@@ -77,17 +78,60 @@ window.OcculusRaster = (() => {
     };
   }
   async function header(item, signal) {
-    const key = item.key + item.etag;
+    const key = (item.module || "phytobloom") + item.key + item.etag;
     if (headers.has(key)) return headers.get(key);
-    const buffer = await interval(item, 0, 262143, signal),
-      tiff = await GeoTIFF.fromArrayBuffer(buffer),
+    let headerBytes = 0,
+      buffer = null;
+    const client = {
+      async request({ headers: requestHeaders, signal: requestSignal }) {
+        const range = new Headers(requestHeaders)
+          .get("Range")
+          .match(/^bytes=(\d+)-(\d+)$/);
+        if (!range) throw Error("Intervalo de metadados inválido.");
+        const start = Number(range[1]),
+          end = Math.min(Number(range[2]), item.bytes - 1),
+          length = end - start + 1;
+        if (length <= 0 || headerBytes + length > 2 * 1048576)
+          throw Error("Metadados TIFF excedem 2 MiB.");
+        headerBytes += length;
+        const out = new Uint8Array(length);
+        for (let i = 0; i < length; i += 262144) {
+          const part = await interval(
+            item,
+            start + i,
+            Math.min(end, start + i + 262143),
+            requestSignal || signal,
+          );
+          out.set(new Uint8Array(part), i);
+        }
+        if (start === 0 && !buffer) buffer = out.buffer;
+        return {
+          ok: true,
+          status: 206,
+          getHeader(name) {
+            if (name.toLowerCase() === "content-range")
+              return `bytes ${start}-${end}/${item.bytes}`;
+            if (name.toLowerCase() === "content-type")
+              return "application/octet-stream";
+            return null;
+          },
+          async getData() {
+            return out.buffer;
+          },
+        };
+      },
+    };
+    const tiff = await GeoTIFF.fromCustomClient(
+        client,
+        { blockSize: 65536, cacheSize: 32, allowFullFile: false },
+        signal,
+      ),
       image = await tiff.getImage(),
       fd = image.getFileDirectory();
     if (
-      fd.Compression !== 1 ||
-      fd.TileWidth ||
-      fd.PlanarConfiguration !== 1 ||
-      ![1, 3].includes(fd.SamplesPerPixel)
+      ![1, 5, 8, 32946].includes(fd.Compression || 1) ||
+      ((fd.PlanarConfiguration || 1) !== 1 && (fd.SamplesPerPixel || 1) > 1) ||
+      ![1, 3].includes(fd.SamplesPerPixel || 1)
     )
       throw Error(
         "Formato de TIFF ainda não compatível com leitura econômica.",
@@ -97,10 +141,10 @@ window.OcculusRaster = (() => {
     if (!scale || !tie) throw Error("GeoTIFF sem transformação espacial.");
     const w = fd.ImageWidth,
       h = fd.ImageLength,
-      c = fd.SamplesPerPixel,
+      c = fd.SamplesPerPixel || 1,
       bits = fd.BitsPerSample[0],
       format = fd.SampleFormat?.[0] || 1;
-    const little = new DataView(buffer).getUint16(0, true) === 0x4949;
+    const little = image.littleEndian;
     const origin = [tie[3] - tie[0] * scale[0], tie[4] + tie[1] * scale[1]],
       p = projection(fd);
     const meta = {
@@ -116,6 +160,7 @@ window.OcculusRaster = (() => {
       ...p,
       item,
       buffer,
+      headerBytes,
     };
     if (
       ![8, 16, 32, 64].includes(bits) ||
@@ -194,7 +239,7 @@ window.OcculusRaster = (() => {
         ? v.getUint16(off, little)
         : v.getUint8(off);
   }
-  function color(data, c, product) {
+  function color(data, c, product, module = "phytobloom") {
     const result = new Uint8ClampedArray((data.length / c) * 4),
       rgb = product.startsWith("RGB");
     let lo = 0,
@@ -229,7 +274,9 @@ window.OcculusRaster = (() => {
               0.8,
             );
       } else {
-        const t = Math.max(0, Math.min(1, (data[i] + 1) / 2)) * 4,
+        const normalized =
+          module === "phytobloom" ? (data[i] + 1) / 2 : data[i];
+        const t = Math.max(0, Math.min(1, normalized)) * 4,
           n = Math.min(3, Math.floor(t)),
           f = t - n;
         for (let b = 0; b < 3; b++)
@@ -283,7 +330,12 @@ window.OcculusRaster = (() => {
   }
   async function preview(item, resolution, crop = [0, 0, 1, 1], signal) {
     const meta = await header(item, signal),
-      key = item.key + item.etag + resolution + crop.join(",");
+      key =
+        (item.module || "phytobloom") +
+        item.key +
+        item.etag +
+        resolution +
+        crop.join(",");
     if (previews.has(key)) return { ...previews.get(key), cached: true };
     const left = Math.floor(crop[0] * meta.w),
       top = Math.floor(crop[1] * meta.h),
@@ -295,55 +347,159 @@ window.OcculusRaster = (() => {
       sw = Math.min(iw, 1024, Math.max(1, Math.round((sh * iw) / ih))),
       bytesPerPixel = (meta.bits / 8) * meta.c,
       rowBytes = meta.w * bytesPerPixel;
-    const rows = [];
-    for (let y = 0; y < sh; y++) {
-      const sy = top + Math.min(ih - 1, Math.floor(((y + 0.5) * ih) / sh)),
-        strip = Math.floor(sy / meta.fd.RowsPerStrip),
-        inStrip = sy % meta.fd.RowsPerStrip;
-      const start =
-          Number(meta.fd.StripOffsets[strip]) +
-          inStrip * rowBytes +
-          left * bytesPerPixel,
-        end = start + iw * bytesPerPixel - 1;
-      if (
-        end >=
-        Number(meta.fd.StripOffsets[strip]) +
-          Number(meta.fd.StripByteCounts[strip])
-      )
-        throw Error("Offsets TIFF inválidos.");
-      if (end - start + 1 > 262144)
-        throw Error("Faixa larga demais. Aproxime o trecho antes de carregar.");
-      rows.push([start, end]);
-    }
-    const estimate = rows.reduce((n, [a, b]) => n + b - a + 1, 0);
-    if (estimate > 16 * 1048576)
-      throw Error("Prévia excederia 16 MiB. Reduza o detalhe.");
     const data = new Float64Array(sw * sh * meta.c);
-    const nodata = Number(meta.fd.GDAL_NODATA);
-    let next = 0;
-    async function worker() {
-      while (next < rows.length) {
-        const y = next++,
-          pair = rows[y];
-        const buffer = await interval(item, ...pair, signal),
-          v = new DataView(buffer);
+    let nodata = Number(meta.fd.GDAL_NODATA);
+    if (meta.format === 3 && meta.bits === 32) nodata = Math.fround(nodata);
+    let estimate = 0;
+    if ((meta.fd.Compression || 1) !== 1 || meta.fd.TileWidth) {
+      const tiled = !!meta.fd.TileWidth,
+        bw = tiled ? meta.fd.TileWidth : meta.w,
+        bh = tiled ? meta.fd.TileLength : meta.fd.RowsPerStrip || meta.h;
+      const offsets = tiled ? meta.fd.TileOffsets : meta.fd.StripOffsets,
+        counts = tiled ? meta.fd.TileByteCounts : meta.fd.StripByteCounts;
+      if ((bw * bh * meta.c * meta.bits) / 8 > 8 * 1048576)
+        throw Error("Bloco TIFF grande demais para a prévia econômica.");
+      const groups = new Map(),
+        across = Math.ceil(meta.w / bw);
+      for (let y = 0; y < sh; y++)
         for (let x = 0; x < sw; x++) {
-          const sx = Math.min(iw - 1, Math.floor(((x + 0.5) * iw) / sw));
-          for (let b = 0; b < meta.c; b++) {
-            let num = value(
-              v,
-              ((sx * meta.c + b) * meta.bits) / 8,
-              meta.bits,
-              meta.format,
-              meta.little,
+          const sy = top + Math.min(ih - 1, Math.floor(((y + 0.5) * ih) / sh)),
+            sx = left + Math.min(iw - 1, Math.floor(((x + 0.5) * iw) / sw));
+          const index = Math.floor(sy / bh) * across + Math.floor(sx / bw);
+          if (!groups.has(index)) groups.set(index, []);
+          groups.get(index).push({
+            dest: (y * sw + x) * meta.c,
+            source: ((sy % bh) * bw + (sx % bw)) * meta.c,
+          });
+        }
+      estimate = [...groups.keys()].reduce(
+        (sum, i) => sum + Number(counts[i]),
+        0,
+      );
+      if (estimate + meta.headerBytes > 16 * 1048576)
+        throw Error(
+          "Este recorte exigiria mais de 16 MiB. Aproxime o mapa ou escolha um recorte menor.",
+        );
+      const decoder = await GeoTIFF.getDecoder(meta.fd),
+        jobs = [...groups],
+        pending = [];
+      let cursor = 0;
+      async function blockWorker() {
+        while (cursor < jobs.length) {
+          const [index, points] = jobs[cursor++],
+            start = Number(offsets[index]),
+            count = Number(counts[index]);
+          const encoded = new Uint8Array(count);
+          for (let offset = 0; offset < count; offset += 262144) {
+            const part = await interval(
+              item,
+              start + offset,
+              start + Math.min(count, offset + 262144) - 1,
+              signal,
             );
-            if (meta.fd.GDAL_NODATA !== undefined && num === nodata) num = NaN;
-            data[(y * sw + x) * meta.c + b] = num;
+            encoded.set(new Uint8Array(part), offset);
+          }
+          const decoded = await decoder.decode(meta.fd, encoded.buffer),
+            view = new DataView(decoded);
+          for (const point of points)
+            for (let band = 0; band < meta.c; band++) {
+              let num = value(
+                view,
+                ((point.source + band) * meta.bits) / 8,
+                meta.bits,
+                meta.format,
+                meta.little,
+              );
+              if (meta.fd.GDAL_NODATA !== undefined && num === nodata)
+                num = NaN;
+              data[point.dest + band] = num;
+            }
+        }
+      }
+      await Promise.all(Array.from({ length: 6 }, blockWorker));
+    } else {
+      const rows = [];
+      for (let y = 0; y < sh; y++) {
+        const sy = top + Math.min(ih - 1, Math.floor(((y + 0.5) * ih) / sh)),
+          strip = Math.floor(sy / meta.fd.RowsPerStrip),
+          inStrip = sy % meta.fd.RowsPerStrip;
+        const start =
+            Number(meta.fd.StripOffsets[strip]) +
+            inStrip * rowBytes +
+            left * bytesPerPixel,
+          end = start + iw * bytesPerPixel - 1;
+        if (
+          end >=
+          Number(meta.fd.StripOffsets[strip]) +
+            Number(meta.fd.StripByteCounts[strip])
+        )
+          throw Error("Offsets TIFF inválidos.");
+        if (end - start + 1 > 262144)
+          throw Error(
+            "Faixa larga demais. Aproxime o trecho antes de carregar.",
+          );
+        rows.push([start, end]);
+      }
+      estimate = rows.reduce((n, [a, b]) => n + b - a + 1, 0);
+      if (estimate > 16 * 1048576)
+        throw Error("Prévia excederia 16 MiB. Reduza o detalhe.");
+
+      let next = 0;
+      async function worker() {
+        while (next < rows.length) {
+          const y = next++,
+            pair = rows[y];
+          const buffer = await interval(item, ...pair, signal),
+            v = new DataView(buffer);
+          for (let x = 0; x < sw; x++) {
+            const sx = Math.min(iw - 1, Math.floor(((x + 0.5) * iw) / sw));
+            for (let b = 0; b < meta.c; b++) {
+              let num = value(
+                v,
+                ((sx * meta.c + b) * meta.bits) / 8,
+                meta.bits,
+                meta.format,
+                meta.little,
+              );
+              if (meta.fd.GDAL_NODATA !== undefined && num === nodata)
+                num = NaN;
+              data[(y * sw + x) * meta.c + b] = num;
+            }
           }
         }
       }
+      await Promise.all(Array.from({ length: 8 }, worker));
     }
-    await Promise.all(Array.from({ length: 8 }, worker));
+    const checkSamples = [];
+    let finite = 0,
+      min = Infinity,
+      max = -Infinity;
+    for (let i = 0; i < sw * sh; i++) {
+      const v = data[i * meta.c];
+      if (!Number.isFinite(v)) continue;
+      finite++;
+      min = Math.min(min, v);
+      max = Math.max(max, v);
+      if (checkSamples.length < 5)
+        checkSamples.push({
+          value: v,
+          row:
+            top +
+            Math.min(
+              ih - 1,
+              Math.floor(((Math.floor(i / sw) + 0.5) * ih) / sh),
+            ),
+          column:
+            left + Math.min(iw - 1, Math.floor((((i % sw) + 0.5) * iw) / sw)),
+        });
+    }
+    const sampleStats = {
+      finite,
+      total: sw * sh,
+      min: finite ? min : null,
+      max: finite ? max : null,
+      checkSamples,
+    };
     const effective = [
         left / meta.w,
         top / meta.h,
@@ -351,8 +507,15 @@ window.OcculusRaster = (() => {
         bottom / meta.h,
       ],
       result = {
-        ...warp(meta, effective, sw, sh, color(data, meta.c, item.product)),
+        ...warp(
+          meta,
+          effective,
+          sw,
+          sh,
+          color(data, meta.c, item.product, item.module || "phytobloom"),
+        ),
         meta,
+        sampleStats,
         crop: effective,
         transferred: estimate,
         cached: false,
@@ -361,5 +524,5 @@ window.OcculusRaster = (() => {
     while (previews.size > 12) previews.delete(previews.keys().next().value);
     return result;
   }
-  return { header, preview, cropForBounds, bounds };
+  return { header, preview, cropForBounds, bounds, color };
 })();

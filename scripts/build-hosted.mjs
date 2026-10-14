@@ -36,9 +36,13 @@ assets["/"].body = assets["/"].body.replace(
   /((?:src|href)="\/static\/[^"?]+)(")/g,
   `$1?v=${revision}$2`,
 );
-const api = fs
-  .readFileSync("hosted/worker/api.js", "utf8")
-  .replace("export async function api", "async function api");
+const schema = fs.readFileSync("occulus/static/modules.js", "utf8");
+const api =
+  schema +
+  "\n" +
+  fs
+    .readFileSync("hosted/worker/api.js", "utf8")
+    .replace("export async function api", "async function api");
 const worker =
   api +
   "\nconst assets=" +

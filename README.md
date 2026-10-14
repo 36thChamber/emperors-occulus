@@ -2,7 +2,7 @@
 
 Observatório geoespacial das análises da Phytobloom: mapa interativo, TIFFs nas coordenadas reais, zoom livre, controle de opacidade e comparação temporal com divisor. A interface usa estética de terminal CRT monocromático com fósforo verde, tipografia monoespaçada, brilho leve e scanlines estáticas. O mapa ocupa a maior parte da tela e pode ser ampliado para tela inteira. O filtro afeta somente o mapa-base; as cores dos índices e das análises permanecem originais.
 
-A integração atual consulta os produtos NDCI, NDVI, NDVI2, RGB e RGB com máscara no bucket privado `copel-siapesq`. Não executa análises nem avalia sucesso dos jobs.
+O módulo Phytobloom consulta NDCI, NDVI, NDVI2, RGB e RGB com máscara no bucket privado `copel-siapesq`. O app também inclui os módulos SIAPESQ STE e SIAPRESP, descritos abaixo. Não executa análises nem avalia sucesso dos jobs.
 
 ## Mapa e interpretação
 
@@ -43,13 +43,13 @@ A versão hospedada usa um Worker ESM e acesso público gerenciado por Sites. Ne
 
 Segredos em Sites: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`. Configuração: `AWS_REGION=sa-east-1`, `S3_BUCKET=copel-siapesq`; `GOOGLE_MAPS_API_KEY` é opcional. As credenciais AWS do site pertencem a um usuário exclusivo, limitado a `ListBucket` no bucket e `GetObject` nos TIFFs. Não use credenciais administrativas. Os visitantes podem consultar as análises publicadas; o bucket permanece privado e as credenciais AWS ficam exclusivamente no servidor.
 
-O Worker assina chamadas S3 usando SigV4; a assinatura e os segredos não chegam ao navegador. O catálogo é mantido em memória por até dez minutos; atualização explícita pode renová-lo após um minuto. Cada intervalo exige nome de TIFF válido, limita a leitura a 256 KiB e verifica a versão do arquivo pelo ETag. O navegador lê cabeçalhos de até 256 KiB e apenas as linhas necessárias, com oito consultas simultâneas.
+O Worker assina chamadas S3 usando SigV4; a assinatura e os segredos não chegam ao navegador. O catálogo é mantido em memória por até dez minutos; atualização explícita pode renová-lo após um minuto. Cada intervalo exige nome de TIFF válido, limita a leitura a 256 KiB e verifica a versão do arquivo pelo ETag. O navegador busca os metadados TIFF dinamicamente, com limite de 2 MiB, e lê linhas ou blocos necessários à prévia.
 
 **Custos:** a hospedagem fica fora da AWS; continuam possíveis cobranças por LIST/GET e saída de dados S3. Google Maps tem cobrança própria quando configurado. Há limites do serviço de hospedagem; não se promete custo total zero nem capacidade ilimitada. Não há polling ou processamento em EC2. OpenStreetMap conserva a atribuição, respeita o cache dos tiles e não faz pré-download de mapas.
 
 Os TIFFs da entrega atual não têm compressão nem overviews. Qualidades de 96/128/256 linhas, até 1024 colunas, e teto de 16 MiB de linhas por prévia reduzem as transferências. Cabeçalhos, retries e tentativas canceladas são tráfego adicional; o contador da sessão registra bytes raster recebidos, não faturamento. Até 12 prévias e 16 cabeçalhos ficam em memória do navegador. Nenhum TIFF é salvo, não há service worker ou cache persistente de análises; os tiles do mapa-base seguem a política normal do provedor.
 
-Formatos comprimidos, tiled/COG ou bandas não intercaladas ainda são recusados pelo leitor atual. COGs e miniaturas geradas pelo pipeline poderão melhorar a eficiência no futuro.
+O suporte a LZW/DEFLATE e tiles permite abrir também as predições STE e SIAPRESP. Overviews de COG e miniaturas geradas pelo pipeline poderão melhorar ainda mais a eficiência.
 
 ## Desenvolvimento
 
@@ -76,3 +76,17 @@ npm test
 Para futuras famílias de análise, adicione um provedor de catálogo/produtos e uma entrada de navegação. Phytobloom é o primeiro módulo. As bibliotecas vendorizadas mantêm suas licenças em `occulus/static/vendor/licenses/`.
 
 O emblema é uma cruz com caveira central em fósforo verde, desenhada em SVG. Para regenerar o ícone Windows: `.venv/bin/python scripts/generate_icon.py`.
+
+## Módulos SIAPESQ STE e SIAPRESP
+
+O seletor no cabeçalho alterna entre **Phytobloom**, **SIAPESQ STE** e **SIAPRESP**. Cada catálogo é carregado sob demanda e mantido separadamente em memória. O acesso público continua restrito a produtos raster publicados; o app não aceita nomes arbitrários de buckets nem expõe credenciais AWS.
+
+- **STE:** caminhos canônicos em `ste-siapesq/predictions/` e lotes em `predicoes_cenarios/`. Espécie/grupo, recorte ou lote, produto e cenário são filtros independentes. Os modelos científicos `Primatas_grupo` usam o slug `aranha`; aliases e cópias antigas não viram mapas duplicados. Há adequabilidade, incerteza, extrapolação e, nos lotes que o incluem, adequabilidade original R. Os cenários anuais, mensais e futuros permanecem identificados; SSPs distintos não são misturados. Os recortes originais são exibidos individualmente e preservam suas máscaras; a seleção Brasil de 1 km não recompõe automaticamente o interior do RS com os outros dois arquivos.
+- **SIAPRESP:** produtos em `tifs-siapesq/predictions/daily/`. Espécie, data, predição média e desvio-padrão. O recorte inicial Atlântico Sul reduz o volume de leitura; é possível selecionar a extensão integral, respeitando o orçamento de transferência. A data é a data do produto, não comprovação de sucesso de uma execução. Não são publicados preditores, modelos treinados ou arquivos de entrada.
+- **Escalas:** os índices Phytobloom mantêm −1 a +1. STE e SIAPRESP usam uma escala visual explícita de 0 a 1, inclusive na visualização do desvio-padrão. Valores fora da escala são saturados apenas para exibição. O desvio-padrão continua sendo um produto separado da predição média/adequabilidade, e não é interpretado como probabilidade.
+
+O leitor aceita rasters sem compressão, LZW e DEFLATE, incluindo faixas e tiles e preditores TIFF 2/3. Bandas separadas são aceitas para rasters de uma única banda. A leitura de diretórios TIFF é dinâmica, inclusive quando os metadados ficam no fim do arquivo, com teto de 2 MiB. Blocos comprimidos necessários às amostras são buscados e decodificados no navegador; não há download para disco. Blocos muito grandes ou recortes que excedam 16 MiB são recusados com orientação para aproximar o recorte. Em rasters comprimidos pequenos, os blocos necessários podem abranger boa parte dos dados. `sampleStats` descreve somente as amostras da prévia, nunca a população inteira do raster.
+
+O usuário IAM exclusivo do site recebeu somente leitura de TIFFs dos três conjuntos de saídas. Os buckets continuam privados. Esta integração não liga instâncias nem altera resultados existentes.
+
+Validação adicional: `tests/test_modules.py`, testes de módulos em `tests/worker.test.mjs`, `tests/compressed_raster_check.py` (fixtures em memória, sem AWS) e `tests/modules_browser_check.py` (rasters reais, leitura de S3). O teste de decodificação compara valores float32, NoData e escalas visuais; o teste real confere STE LZW e SIAPRESP DEFLATE.

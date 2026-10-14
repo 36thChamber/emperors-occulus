@@ -1,6 +1,5 @@
 const enc = new TextEncoder();
-const KEY = /^\d+_\d{4}_\d{2}_\d{2}_(?:NDCI|NDVI2?|RGB(?:_MASK)?)\.tif$/;
-let catalogCache = null;
+const catalogCaches = new Map();
 const hex = (b) =>
   Array.from(new Uint8Array(b))
     .map((v) => v.toString(16).padStart(2, "0"))
@@ -17,9 +16,15 @@ async function hmac(key, data) {
   );
   return crypto.subtle.sign("HMAC", k, enc.encode(data));
 }
-async function signed(env, key = "", query = {}, range = null) {
+async function signed(
+  env,
+  key = "",
+  query = {},
+  range = null,
+  targetBucket = null,
+) {
   const region = env.AWS_REGION || "sa-east-1",
-    bucket = env.S3_BUCKET || "copel-siapesq";
+    bucket = targetBucket || env.S3_BUCKET || "copel-siapesq";
   if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY)
     throw Error("Credencial de leitura não configurada.");
   const hostname = `${bucket}.s3.${region}.amazonaws.com`,
@@ -78,7 +83,14 @@ export async function api(request, env) {
       googleMapsKey: env.GOOGLE_MAPS_API_KEY || "",
       hosted: true,
     });
+  const module = url.searchParams.get("module") || "phytobloom";
+  const definition = Object.hasOwn(OcculusModules.definitions, module)
+    ? OcculusModules.definitions[module]
+    : null;
+  if (!definition)
+    return Response.json({ error: "Módulo inválido." }, { status: 400 });
   if (url.pathname === "/api/catalog") {
+    let catalogCache = catalogCaches.get(module);
     if (
       !catalogCache ||
       Date.now() - catalogCache.at > 600000 ||
@@ -87,37 +99,42 @@ export async function api(request, env) {
     ) {
       let items = [],
         cursor = "";
-      do {
-        const query = { "list-type": "2", "max-keys": "1000" };
-        if (cursor) query["continuation-token"] = cursor;
-        const text = await (await signed(env, "", query)).text();
-        for (const block of text.matchAll(
-          /<Contents>([\s\S]*?)<\/Contents>/g,
-        )) {
-          const key = tag(block[1], "Key");
-          if (!KEY.test(key)) continue;
-          const m = key.match(/^(\d+)_(\d{4})_(\d{2})_(\d{2})_(.+)\.tif$/);
-          items.push({
-            key,
-            area: m[1],
-            date: `${m[2]}-${m[3]}-${m[4]}`,
-            product: m[5],
-            bytes: Number(tag(block[1], "Size")),
-            etag: tag(block[1], "ETag"),
-            published: tag(block[1], "LastModified"),
-          });
-        }
-        cursor = tag(text, "NextContinuationToken");
-      } while (cursor);
+      for (const prefix of definition.prefixes) {
+        cursor = "";
+        do {
+          const query = { "list-type": "2", "max-keys": "1000" };
+          if (prefix) query.prefix = prefix;
+          if (cursor) query["continuation-token"] = cursor;
+          const text = await (
+            await signed(env, "", query, null, definition.bucket)
+          ).text();
+          for (const block of text.matchAll(
+            /<Contents>([\s\S]*?)<\/Contents>/g,
+          )) {
+            const key = tag(block[1], "Key");
+            const parsed = OcculusModules.parse(module, key);
+            if (!parsed) continue;
+            items.push({
+              ...parsed,
+              bytes: Number(tag(block[1], "Size")),
+              etag: tag(block[1], "ETag"),
+              published: tag(block[1], "LastModified"),
+            });
+          }
+          cursor = tag(text, "NextContinuationToken");
+        } while (cursor);
+      }
       catalogCache = {
         at: Date.now(),
         data: {
           items,
           updated: Date.now() / 1000,
-          bucket: env.S3_BUCKET || "copel-siapesq",
+          bucket: definition.bucket,
+          module,
         },
       };
     }
+    catalogCaches.set(module, catalogCache);
     return Response.json(catalogCache.data);
   }
   if (url.pathname === "/api/range") {
@@ -125,7 +142,7 @@ export async function api(request, env) {
       start = Number(url.searchParams.get("start")),
       end = Number(url.searchParams.get("end"));
     if (
-      !KEY.test(key || "") ||
+      !OcculusModules.parse(module, key || "") ||
       !Number.isSafeInteger(start) ||
       !Number.isSafeInteger(end) ||
       start < 0 ||
@@ -133,7 +150,13 @@ export async function api(request, env) {
       end - start + 1 > 262144
     )
       return Response.json({ error: "Intervalo inválido." }, { status: 400 });
-    const r = await signed(env, key, {}, `bytes=${start}-${end}`);
+    const r = await signed(
+      env,
+      key,
+      {},
+      `bytes=${start}-${end}`,
+      definition.bucket,
+    );
     if (r.status !== 206)
       return Response.json(
         { error: "O S3 não devolveu uma leitura parcial." },

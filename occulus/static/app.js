@@ -12,11 +12,20 @@ let items = [],
   currentCrop = [0, 0, 1, 1],
   googleLayer = null,
   googleSatelliteLayer = null;
+const modules = OcculusModules;
+const activeModule = () => $("module").value;
+const subset = () =>
+  items.filter(
+    (x) =>
+      x.area === $("area").value &&
+      (activeModule() !== "ste" || x.region === $("region").value),
+  );
+let catalogGeneration = 0;
 const fmt = (b) =>
     b >= 1048576
       ? (b / 1048576).toFixed(2) + " MiB"
       : (b / 1024).toFixed(1) + " KiB",
-  day = (d) => d.split("-").reverse().join("/");
+  day = (d) => modules.scenarioLabel(d);
 const map = L.map("map", {
   zoomControl: true,
   maxZoom: 22,
@@ -55,6 +64,7 @@ function removeLayers() {
   if (overlayB) map.removeLayer(overlayB);
   overlayA = overlayB = null;
   selection = null;
+  $("load").disabled = false;
   $("fit").disabled = true;
   $("comparison").hidden = true;
   $("map-title").textContent = "AUSPEX EM ESPERA";
@@ -67,8 +77,8 @@ function dates() {
     old = $("date").value,
     ds = [
       ...new Set(
-        items
-          .filter((x) => x.area === area && x.product === product)
+        subset()
+          .filter((x) => x.product === product)
           .map((x) => x.date),
       ),
     ]
@@ -79,6 +89,8 @@ function dates() {
     ds.map((d) => [d, day(d)]),
   );
   if (ds.includes(old)) $("date").value = old;
+  else if (activeModule() === "ste" && ds.includes("anual_2015_2024"))
+    $("date").value = "anual_2015_2024";
   options(
     $("compare"),
     ds.map((d) => [d, day(d)]),
@@ -92,41 +104,103 @@ function dates() {
       : "Não há arquivos para esta seleção.",
   );
 }
+function products() {
+  const old = $("product").value,
+    available = [...new Set(subset().map((x) => x.product))];
+  const order =
+    activeModule() === "phytobloom"
+      ? ["NDCI", "NDVI", "NDVI2", "RGB", "RGB_MASK"]
+      : activeModule() === "ste"
+        ? ["adequabilidade", "incerteza", "extrapolacao", "adequabilidade_R"]
+        : ["mean", "sd"];
+  options(
+    $("product"),
+    order
+      .filter((p) => available.includes(p))
+      .map((p) => [p, modules.productLabel(p)]),
+  );
+  if (available.includes(old)) $("product").value = old;
+  dates();
+}
+function regions() {
+  const module = activeModule(),
+    old = $("region").value;
+  $("region-control").hidden = module === "phytobloom";
+  if (module === "ste") {
+    const list = [
+      ...new Set(
+        items.filter((x) => x.area === $("area").value).map((x) => x.region),
+      ),
+    ]
+      .sort()
+      .reverse();
+    options(
+      $("region"),
+      list.map((r) => [r, modules.regionLabel(r)]),
+    );
+    if (list.includes(old)) $("region").value = old;
+    else if (list.includes("nacional_1km")) $("region").value = "nacional_1km";
+  } else if (module === "siapresp")
+    options($("region"), [
+      ["atlantic", "Atlântico Sul"],
+      ["integral", "Extensão integral"],
+    ]);
+  else options($("region"), [["", "Toda a área"]]);
+  products();
+}
 async function catalog(refresh = false) {
+  const id = ++catalogGeneration,
+    module = activeModule();
+  removeLayers();
   $("refresh").disabled = true;
-  msg("Sincronizando os registros da noosfera…");
+  $("load").disabled = true;
+  msg("Sincronizando " + modules.definitions[module].label + "…");
   try {
     const old = $("area").value,
-      j = await api("/api/catalog" + (refresh ? "?refresh=1" : ""));
+      j = await api(
+        "/api/catalog?module=" + module + (refresh ? "&refresh=1" : ""),
+      );
+    if (id !== catalogGeneration) return;
     items = j.items;
-    const areas = [...new Set(items.map((x) => x.area))].sort(
-      (a, b) => Number(a) - Number(b),
+    const areas = [...new Set(items.map((x) => x.area))].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
     );
     options(
       $("area"),
-      areas.map((a) => [a, "Área " + a]),
+      areas.map((a) => [a, modules.areaLabel(a, module)]),
     );
     if (areas.includes(old)) $("area").value = old;
-    else if (areas.includes("165")) $("area").value = "165";
+    else if (module === "phytobloom" && areas.includes("165"))
+      $("area").value = "165";
+    else if (module === "ste" && areas.includes("Alouatta_caraya"))
+      $("area").value = "Alouatta_caraya";
+    $("area-label").textContent =
+      module === "phytobloom" ? "Área" : "Espécie / grupo";
+    $("date-label").textContent =
+      module === "ste" ? "Cenário" : "Data do produto";
+    $("entity-label").textContent =
+      module === "phytobloom" ? "ÁREAS" : "ESPÉCIES";
+    $("period-label").textContent = module === "ste" ? "CENÁRIOS" : "DATAS";
+    $("latest-label").textContent = module === "ste" ? "PUBLICADO" : "ÚLTIMA";
+    $("module-note").textContent =
+      modules.definitions[module].label.toUpperCase();
     $("areas-count").textContent = areas.length;
     $("dates-count").textContent = new Set(items.map((x) => x.date)).size;
-    $("latest").textContent = items.length
-      ? day(
-          items
-            .map((x) => x.date)
-            .sort()
-            .at(-1),
-        )
-      : "—";
+    const stamps = items
+      .map((x) => (module === "ste" ? x.published?.slice(0, 10) : x.date))
+      .filter(Boolean)
+      .sort();
+    $("latest").textContent = stamps.length ? day(stamps.at(-1)) : "—";
     $("catalog-status").textContent =
-      items.length + " arquivos · catálogo atualizado";
-    dates();
+      items.length + " produtos · " + modules.definitions[module].label;
+    regions();
   } catch (e) {
-    msg(e.message, true);
+    if (id === catalogGeneration) msg(e.message, true);
   } finally {
-    $("refresh").disabled = false;
+    if (id === catalogGeneration) $("refresh").disabled = false;
   }
 }
+
 function clip() {
   if (!overlayB) return;
   const el = overlayB.getElement(),
@@ -156,14 +230,11 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
   controller?.abort();
   controller = new AbortController();
   const signal = controller.signal;
-  const item = items.find(
-    (x) =>
-      x.area === $("area").value &&
-      x.product === $("product").value &&
-      x.date === $("date").value,
+  const item = subset().find(
+    (x) => x.product === $("product").value && x.date === $("date").value,
   );
   if (!item) return;
-  const compare = items.find(
+  const compare = subset().find(
     (x) =>
       x.area === item.area &&
       x.product === item.product &&
@@ -172,6 +243,21 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
   $("load").disabled = true;
   msg("O espírito processa a visão orbital…");
   try {
+    if (
+      fit &&
+      activeModule() === "siapresp" &&
+      $("region").value === "atlantic"
+    ) {
+      const meta = await OcculusRaster.header(item, signal);
+      crop =
+        OcculusRaster.cropForBounds(
+          meta,
+          L.latLngBounds([
+            [-40, -60],
+            [7, -25],
+          ]),
+        ) || crop;
+    }
     const result = await OcculusRaster.preview(
       item,
       Number($("quality").value),
@@ -184,7 +270,15 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
     currentCrop = crop;
     $("fit").disabled = false;
     $("legend").hidden = item.product.startsWith("RGB");
-    $("map-title").textContent = `ÁREA ${item.area} // ${item.product}`;
+    const isIndex = activeModule() === "phytobloom";
+    $("legend-min").textContent = isIndex ? "−1" : "0";
+    $("legend-mid").textContent = isIndex ? "0" : "0.5";
+    $("legend-max").textContent = isIndex ? "+1" : "1";
+    $("legend-label").textContent = isIndex
+      ? "ÍNDICE / CORES ORIGINAIS"
+      : modules.productLabel(item.product).toUpperCase() + " / ESCALA 0–1";
+    $("map-title").textContent =
+      `${modules.areaLabel(item.area, activeModule())} // ${modules.productLabel(item.product)}`;
     $("map-subtitle").textContent =
       `${day(item.date)} · EPSG:${result.meta.epsg} → mapa georreferenciado`;
     if (compare) {
@@ -246,7 +340,15 @@ map.on(
     ($("coordinates").textContent =
       e.latlng.lat.toFixed(5) + "°, " + e.latlng.lng.toFixed(5) + "°"),
 );
-$("area").onchange = dates;
+$("area").onchange = regions;
+$("module").onchange = () => catalog();
+$("region").onchange = () => {
+  if (activeModule() === "ste") products();
+  else {
+    removeLayers();
+    msg("Recorte alterado. Invoque a visão.");
+  }
+};
 $("product").onchange = dates;
 $("date").onchange = () => {
   removeLayers();
