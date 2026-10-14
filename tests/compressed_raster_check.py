@@ -31,6 +31,24 @@ for codec in ["LZW", "DEFLATE"]:
         with mem.open(**profile) as d:
             d.write(source, 1)
         fixtures[codec] = mem.read()
+# Finite NoData tags contain a TIFF ASCII terminator and must not become pixels.
+with MemoryFile() as mem:
+    with mem.open(
+        driver="GTiff",
+        width=64,
+        height=64,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4326",
+        transform=from_origin(-55, -29, 0.01, 0.01),
+        nodata=-9999,
+        compress="DEFLATE",
+        tiled=True,
+        blockxsize=16,
+        blockysize=16,
+    ) as d:
+        d.write(np.nan_to_num(source, nan=-9999), 1)
+    fixtures["DEFLATE_FINITE_NODATA"] = mem.read()
 # A valid TIFF can point to a directory at EOF, while data/tag payloads stay at
 # their original absolute offsets. This reproduces the SIAPRESP metadata layout.
 original = fixtures["DEFLATE"]

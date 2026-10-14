@@ -348,7 +348,7 @@ window.OcculusRaster = (() => {
       bytesPerPixel = (meta.bits / 8) * meta.c,
       rowBytes = meta.w * bytesPerPixel;
     const data = new Float64Array(sw * sh * meta.c);
-    let nodata = Number(meta.fd.GDAL_NODATA);
+    let nodata = Number(String(meta.fd.GDAL_NODATA).replace(/\0/g, "").trim());
     if (meta.format === 3 && meta.bits === 32) nodata = Math.fround(nodata);
     let estimate = 0;
     if ((meta.fd.Compression || 1) !== 1 || meta.fd.TileWidth) {
