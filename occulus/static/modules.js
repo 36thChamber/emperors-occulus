@@ -110,9 +110,34 @@
               "Futuro · $1 · SSP$2-$3.$4",
             )
           : s.split("-").reverse().join("/");
+  // Display names only: keep catalog IDs and S3 keys unchanged.
+  // camarao has no scientific identification in the historical registry.
+  const marineNames = {
+    thunnus_obesus: "Albacora-bandolim (Thunnus obesus)",
+    thunnus_albacares: "Albacora-laje (Thunnus albacares)",
+    thunnus_alalunga: "Albacora-branca (Thunnus alalunga)",
+    katsuwonus_pelamis: "Bonito-listrado (Katsuwonus pelamis)",
+    tursiops_truncatus: "Golfinho-nariz-de-garrafa (Tursiops truncatus)",
+    xiphias_gladius: "Espadarte (Xiphias gladius)",
+    caretta_caretta: "Tartaruga-cabeçuda (Caretta caretta)",
+    megaptera_novaeangliae: "Baleia-jubarte (Megaptera novaeangliae)",
+    caranx_all: "Xaréus (Caranx spp.)",
+    mugil_liza: "Tainha (Mugil liza)",
+    merluccius_hubbsi: "Merluza-argentina (Merluccius hubbsi)",
+    micropogonias_furnieri: "Corvina (Micropogonias furnieri)",
+    pomatomus_saltatrix: "Anchova (Pomatomus saltatrix)",
+    sardinella_brasiliensis: "Sardinha-verdadeira (Sardinella brasiliensis)",
+    urophycis_brasiliensis: "Abrótea (Urophycis brasiliensis)",
+    cynoscion_all: "Pescadas (Cynoscion spp.)",
+    camarao: "Camarões (nome científico não informado)",
+    engraulis_anchoita: "Anchoíta (Engraulis anchoita)",
+    merluccius_merluccius: "Merluza-europeia (Merluccius merluccius)",
+  };
   const areaLabel = (a, module) =>
     module === "phytobloom"
       ? "Área " + a
+      : module === "siapresp" && marineNames[a.toLowerCase()]
+        ? marineNames[a.toLowerCase()]
       : a === "Primatas_grupo"
         ? "Primatas · aranha"
         : a.replaceAll("_", " ");
