@@ -2,7 +2,7 @@
 
 Observatório geoespacial das análises da Phytobloom: mapa interativo, TIFFs nas coordenadas reais, zoom livre, controle de opacidade e comparação temporal com divisor. A interface usa estética de terminal CRT monocromático com fósforo verde, tipografia monoespaçada, brilho leve e scanlines estáticas. O mapa ocupa a maior parte da tela e pode ser ampliado para tela inteira. O filtro afeta somente o mapa-base; as cores dos índices e das análises permanecem originais.
 
-O módulo Phytobloom consulta NDCI, NDVI, NDVI2, RGB e RGB com máscara no bucket privado `copel-siapesq`. O app também inclui os módulos SIAPESQ STE e SIAPRESP, descritos abaixo. Não executa análises nem avalia sucesso dos jobs.
+O módulo Phytobloom consulta NDCI, NDVI, NDVI2, RGB e RGB com máscara no bucket privado `copel-siapesq`. O app também inclui os módulos SIAPESQ e SIAPRESP, descritos abaixo. Não executa análises nem avalia sucesso dos jobs.
 
 ## Mapa e interpretação
 
@@ -77,9 +77,9 @@ Para futuras famílias de análise, adicione um provedor de catálogo/produtos e
 
 O emblema é uma cruz com caveira central em fósforo verde, desenhada em SVG. Para regenerar o ícone Windows: `.venv/bin/python scripts/generate_icon.py`.
 
-## Módulos SIAPESQ STE e SIAPRESP
+## Módulos SIAPESQ e SIAPRESP
 
-O seletor no cabeçalho alterna entre **Phytobloom**, **SIAPESQ STE** e **SIAPRESP**. Cada catálogo é carregado sob demanda e mantido separadamente em memória. O acesso público continua restrito a produtos raster publicados; o app não aceita nomes arbitrários de buckets nem expõe credenciais AWS.
+O seletor no cabeçalho alterna entre **Phytobloom**, **SIAPESQ** e **SIAPRESP**. Cada catálogo é carregado sob demanda e mantido separadamente em memória. O acesso público continua restrito a produtos raster publicados; o app não aceita nomes arbitrários de buckets nem expõe credenciais AWS.
 
 - **STE:** caminhos canônicos em `ste-siapesq/predictions/` e lotes em `predicoes_cenarios/`. Espécie/grupo, recorte ou lote, produto e cenário são filtros independentes. Os modelos científicos `Primatas_grupo` usam o slug `aranha`; aliases e cópias antigas não viram mapas duplicados. Há adequabilidade, incerteza, extrapolação e, nos lotes que o incluem, adequabilidade original R. Os cenários anuais, mensais e futuros permanecem identificados; SSPs distintos não são misturados. Os recortes originais são exibidos individualmente e preservam suas máscaras; a seleção Brasil de 1 km não recompõe automaticamente o interior do RS com os outros dois arquivos.
 - **SIAPRESP:** produtos em `tifs-siapesq/predictions/daily/`. Espécie, data, predição média e desvio-padrão. O recorte inicial Atlântico Sul reduz o volume de leitura; é possível selecionar a extensão integral, respeitando o orçamento de transferência. A data é a data do produto, não comprovação de sucesso de uma execução. Não são publicados preditores, modelos treinados ou arquivos de entrada.

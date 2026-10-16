@@ -24,7 +24,7 @@
       prefixes: [""],
     },
     ste: {
-      label: "SIAPESQ STE",
+      label: "SIAPESQ",
       bucket: "ste-siapesq",
       prefixes: ["predictions/", "predicoes_cenarios/"],
     },
@@ -133,13 +133,47 @@
     engraulis_anchoita: "Anchoíta (Engraulis anchoita)",
     merluccius_merluccius: "Merluza-europeia (Merluccius merluccius)",
   };
+  const siapesqNames = {
+    "acromyrmex_crassispinus": "Quenquém-de-cisco (Acromyrmex crassispinus)",
+    "acromyrmex_subterraneus": "Quenquém-mineira (Acromyrmex subterraneus)",
+    "alouatta_caraya": "Bugio-preto (Alouatta caraya)",
+    "alouatta_guariba": "Bugio-ruivo (Alouatta guariba)",
+    "butia_eriospatha": "Butiá-da-serra (Butia eriospatha)",
+    "caracara_plancus": "Carcará (Caracara plancus)",
+    "cariama_cristata": "Seriema (Cariama cristata)",
+    "cedrela_fissilis": "Cedro-rosa (Cedrela fissilis)",
+    "cerdocyon_thous": "Cachorro-do-mato (Cerdocyon thous)",
+    "chelonia_mydas": "Tartaruga-verde (Chelonia mydas)",
+    "ciconia_maguari": "Maguari (Ciconia maguari)",
+    "columbina_talpacoti": "Rolinha-roxa (Columbina talpacoti)",
+    "dasypus_novemcinctus": "Tatu-galinha (Dasypus novemcinctus)",
+    "desmodus_rotundus": "Morcego-vampiro-comum (Desmodus rotundus)",
+    "didelphis_albiventris": "Gambá-de-orelha-branca (Didelphis albiventris)",
+    "eira_barbara": "Irara (Eira barbara)",
+    "eugenia_uniflora": "Pitangueira (Eugenia uniflora)",
+    "guira_guira": "Anu-branco (Guira guira)",
+    "hydrochoerus_hydrochaeris": "Capivara (Hydrochoerus hydrochaeris)",
+    "nasua_nasua": "Quati (Nasua nasua)",
+    "phalacrocorax_brasilianus": "Biguá (Phalacrocorax brasilianus)",
+    "pitangus_sulphuratus": "Bem-te-vi (Pitangus sulphuratus)",
+    "puma_concolor": "Onça-parda (Puma concolor)",
+    "ramphastos_dicolorus": "Tucano-de-bico-verde (Ramphastos dicolorus)",
+    "rupornis_magnirostris": "Gavião-carijó (Rupornis magnirostris)",
+    "sapajus_nigritus": "Macaco-prego-preto (Sapajus nigritus)",
+    "schizolobium_parahyba": "Guapuruvu (Schizolobium parahyba)",
+    "troglodytes_musculus": "Corruíra (Troglodytes musculus)",
+    "turdus_rufiventris": "Sabiá-laranjeira (Turdus rufiventris)",
+    "vanellus_chilensis": "Quero-quero (Vanellus chilensis)",
+    "vireo_chivi": "Juruviara (Vireo chivi)",
+    "primatas_grupo": "Aranha · grupo de primatas (Primates)"
+};
   const areaLabel = (a, module) =>
     module === "phytobloom"
       ? "Área " + a
       : module === "siapresp" && marineNames[a.toLowerCase()]
         ? marineNames[a.toLowerCase()]
-      : a === "Primatas_grupo"
-        ? "Primatas · aranha"
+      : module === "ste" && (siapesqNames[a.toLowerCase()] || marineNames[a.toLowerCase()])
+        ? siapesqNames[a.toLowerCase()] || marineNames[a.toLowerCase()]
         : a.replaceAll("_", " ");
   const regionLabel = (r) => {
     const named = {

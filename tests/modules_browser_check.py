@@ -16,7 +16,7 @@ with sync_playwright() as p:
     ]:
         page.select_option("#module", module)
         expect(page.locator("#module-note")).to_have_text(
-            "SIAPESQ STE" if module == "ste" else "SIAPRESP", timeout=90000
+            "SIAPESQ" if module == "ste" else "SIAPRESP", timeout=90000
         )
         page.select_option("#area", area)
         page.select_option("#region", region)
