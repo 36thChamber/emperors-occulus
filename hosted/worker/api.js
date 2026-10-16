@@ -1,5 +1,7 @@
 const enc = new TextEncoder();
 const catalogCaches = new Map();
+let occurrenceIndex = null;
+const MAX_CSV_BYTES = 16 * 1024 * 1024;
 const hex = (b) =>
   Array.from(new Uint8Array(b))
     .map((v) => v.toString(16).padStart(2, "0"))
@@ -136,6 +138,44 @@ export async function api(request, env) {
     }
     catalogCaches.set(module, catalogCache);
     return Response.json(catalogCache.data);
+  }
+  if (url.pathname === "/api/occurrences") {
+    const key = url.searchParams.get("key") || "";
+    const parsed = OcculusModules.parse(module, key);
+    if (!["ste", "siapresp"].includes(module) || !parsed)
+      return Response.json({ error: "Seleção de espécie inválida." }, { status: 400 });
+    if (!occurrenceIndex || Date.now() - occurrenceIndex.at > 600000) {
+      const objects = []; let cursor = "";
+      do {
+        const query = { "list-type": "2", "max-keys": "1000", prefix: "species-table/" };
+        if (cursor) query["continuation-token"] = cursor;
+        const listing = await (await signed(env, "", query, null, "ste-siapesq")).text();
+        for (const block of listing.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+          objects.push({ key: tag(block[1], "Key"), bytes: Number(tag(block[1], "Size")), etag: tag(block[1], "ETag") });
+        }
+        cursor = tag(listing, "NextContinuationToken");
+      } while (cursor);
+      occurrenceIndex = { at: Date.now(), objects };
+    }
+    const source = OcculusOccurrences.sourceFor(parsed.area, occurrenceIndex.objects);
+    if (!source) return Response.json({ error: "Não há tabela de ocorrência identificada para esta espécie/grupo." }, { status: 404 });
+    if (source.bytes > MAX_CSV_BYTES) return Response.json({ error: "Tabela acima do limite de leitura de 16 MiB." }, { status: 413 });
+    const response = await signed(env, source.key, {}, null, "ste-siapesq");
+    if (response.headers.get("etag") !== source.etag) {
+      occurrenceIndex = null;
+      return Response.json({ error: "A tabela mudou. Tente carregar novamente." }, { status: 409 });
+    }
+    // Bound the actual body as well as the listing size, including concurrent replacement.
+    const reader = response.body.getReader(), chunks = []; let size = 0;
+    while (true) {
+      const chunk = await reader.read(); if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > MAX_CSV_BYTES) { await reader.cancel(); return Response.json({ error: "Tabela acima do limite de leitura de 16 MiB." }, { status: 413 }); }
+      chunks.push(chunk.value);
+    }
+    const data = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { data.set(chunk, offset); offset += chunk.byteLength; }
+    return Response.json({ source: source.key, etag: source.etag, bytes: size, text: new TextDecoder().decode(data) });
   }
   if (url.pathname === "/api/range") {
     const key = url.searchParams.get("key"),

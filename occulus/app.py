@@ -3,6 +3,7 @@ from flask import Flask, request, jsonify, abort, send_from_directory
 from botocore.exceptions import BotoCoreError, ClientError
 from .core import Catalog, fetch_range
 from .modules import ModuleCatalog
+from .occurrences import OccurrenceReader
 
 
 def wsl_network():
@@ -19,6 +20,7 @@ def create_app(catalog=None):
     app = Flask(__name__, static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = 4096
     catalog = catalog or Catalog()
+    occurrences = OccurrenceReader(catalog.s3)
     catalogs = {
         "phytobloom": catalog,
         "ste": ModuleCatalog("ste", catalog.s3),
@@ -94,6 +96,13 @@ def create_app(catalog=None):
             raise ValueError("Intervalo fora do arquivo.")
         data = fetch_range(selected.s3, selected.bucket, key, start, end, item["etag"])
         return app.response_class(data, mimetype="application/octet-stream")
+
+    @app.get("/api/occurrences")
+    def occurrence_table():
+        result = occurrences.read(request.args.get("module", ""), request.args.get("key", ""))
+        if result is None:
+            return jsonify(error="Não há tabela de ocorrência identificada para esta espécie/grupo."), 404
+        return jsonify(result)
 
     @app.get("/api/catalog")
     def listing():

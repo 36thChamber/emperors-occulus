@@ -14,7 +14,9 @@
     <script src="/static/vendor/googlemutant.js" defer></script>
     <script src="/static/raster.js" defer></script>
     <script src="/static/modules.js" defer></script>
+    <script src="/static/occurrences.js" defer></script>
     <script src="/static/app.js" defer></script>
+    <script src="/static/occurrence-ui.js" defer></script>
   </head>
   <body>
     <header class="terminal-header">
@@ -36,10 +38,13 @@
       <div class="terminal-state">
         <span class="dot"></span><span id="mode">INICIALIZANDO COGITADOR</span>
       </div>
+      <button id="sidebar-toggle" class="secondary" aria-controls="vision-sidebar" aria-expanded="true">☰ Controles</button>
       <button id="refresh" class="secondary">↻ Sincronizar</button>
     </header>
     <main>
       <section class="workspace" aria-label="Observatório Phytobloom">
+        <aside id="vision-sidebar" class="vision-sidebar" aria-label="Controles e ocorrências">
+          <div class="sidebar-heading"><span>INVOKE // VISÕES</span><button id="sidebar-close" class="secondary" aria-label="Ocultar barra lateral">‹</button></div>
         <div class="filters">
           <label
             ><span id="area-label">Área</span
@@ -71,6 +76,39 @@
             </select></label
           ><button id="load">▶ Invocar visão</button>
         </div>
+        <div class="tools">
+          <button id="fit" class="secondary" disabled>◎ Enquadrar</button
+          ><label
+            >Opacidade
+            <input
+              id="opacity"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value="0.75" /></label
+          ><label
+            >Mapa-base<select id="basemap">
+              <option value="osm">OpenStreetMap · CRT</option>
+              <option value="google" disabled>
+                Google ruas · CRT · requer chave
+              </option>
+              <option value="google-satellite" disabled>
+                Google satélite · CRT · requer chave
+              </option>
+            </select></label
+          ><span id="read-info">ARRASTE PARA NAVEGAR / ROLE PARA AMPLIAR</span>
+        </div>
+          <section id="occurrence-controls" class="occurrence-controls" hidden>
+            <h2>REGISTROS // OCORRÊNCIAS</h2>
+            <p>Presenças históricas. Não representam ocorrências previstas no cenário selecionado.</p>
+            <button id="show-table" class="secondary" aria-controls="occurrence-panel" aria-expanded="false">▤ Mostrar tabela</button>
+            <button id="show-points" class="secondary" aria-pressed="false">◎ Plotar ocorrências</button>
+            <button id="fit-points" class="secondary" disabled>⌖ Enquadrar pontos</button>
+            <p id="occurrence-status" role="status" aria-live="polite">Carregue a tabela ou os pontos da espécie selecionada.</p>
+          </section>
+        </aside>
+        <div class="map-workspace">
         <div class="status-strip">
           <span id="message" role="status" aria-live="polite"
             >ESTABELECENDO CONEXÃO…</span
@@ -111,33 +149,20 @@
               Principal</label
             >
           </div>
+          <div id="points-badge" class="points-badge" hidden>◎ <span id="points-count"></span> · PRESENÇAS HISTÓRICAS</div>
+          <section id="occurrence-panel" class="occurrence-panel" aria-label="Tabela de ocorrências" hidden>
+            <div class="table-heading"><h2>REGISTROS DE OCORRÊNCIA</h2><button id="close-table" class="secondary" aria-label="Fechar tabela">✕</button></div>
+            <div id="table-species"></div>
+            <p id="table-source" class="table-source"></p>
+            <div class="table-search"><label for="occurrence-search">Buscar na tabela</label><input id="occurrence-search" type="search" placeholder="Local, data, fonte…" /></div>
+            <div class="table-scroll" tabindex="0" aria-label="Dados de ocorrência"><table id="occurrence-table"><thead></thead><tbody></tbody></table></div>
+            <div class="table-pagination"><button id="table-prev" class="secondary" aria-label="Página anterior">←</button><span id="table-page" role="status"></span><button id="table-next" class="secondary" aria-label="Próxima página">→</button></div>
+          </section>
           <div class="corner c1"></div>
           <div class="corner c2"></div>
           <div class="corner c3"></div>
           <div class="corner c4"></div>
         </div>
-        <div class="tools">
-          <button id="fit" class="secondary" disabled>◎ Enquadrar</button
-          ><label
-            >Opacidade
-            <input
-              id="opacity"
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value="0.75" /></label
-          ><label
-            >Mapa-base<select id="basemap">
-              <option value="osm">OpenStreetMap · CRT</option>
-              <option value="google" disabled>
-                Google ruas · CRT · requer chave
-              </option>
-              <option value="google-satellite" disabled>
-                Google satélite · CRT · requer chave
-              </option>
-            </select></label
-          ><span id="read-info">ARRASTE PARA NAVEGAR / ROLE PARA AMPLIAR</span>
         </div>
       </section>
     </main>

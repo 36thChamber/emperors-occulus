@@ -167,3 +167,37 @@ test("range endpoints fix the bucket by module and reject cross-module keys", as
     globalThis.fetch = orig;
   }
 });
+
+test('occurrence endpoint rejects arbitrary paths and non-species modules without AWS access', async () => {
+  for (const [module,key] of [['ste','species-table/caraya.csv'],['ste','../../private'],['phytobloom','165_2026_10_09_NDCI.tif'],['siapresp','predictions/caraya/Alouatta_caraya_rs_250m_anual_2015_2024_adequabilidade.tif']]) {
+    const r = await worker.default.fetch(new Request('https://example.test/api/occurrences?' + new URLSearchParams({module,key})), {}, {});
+    assert.equal(r.status,400);
+  }
+});
+test('occurrence reader selects only species-matching CSV, paginates and bounds actual bytes', async () => {
+  const orig = globalThis.fetch, calls=[];
+  const env={AWS_ACCESS_KEY_ID:'test',AWS_SECRET_ACCESS_KEY:'test'};
+  globalThis.fetch = async (url,options) => {
+    const u=new URL(url); calls.push(u);
+    assert.equal(u.hostname,'ste-siapesq.s3.sa-east-1.amazonaws.com');
+    if(u.searchParams.has('list-type')) {
+      assert.equal(u.searchParams.get('prefix'),'species-table/');
+      if(!u.searchParams.has('continuation-token')) return new Response('<ListBucketResult><NextContinuationToken>next</NextContinuationToken></ListBucketResult>');
+      return new Response('<ListBucketResult><Contents><Key>species-table/caraya.csv</Key><Size>100</Size><ETag>&quot;v1&quot;</ETag></Contents><Contents><Key>species-table/Occurrence_Test_huge_01_01_26.csv</Key><Size>17000000</Size><ETag>&quot;v1&quot;</ETag></Contents></ListBucketResult>');
+    }
+    assert.equal(u.pathname,'/species-table/caraya.csv');
+    return new Response('sp,decimalLatitude,decimalLongitude\n1,-29,-51\n0,-28,-52', {headers:{etag:'"v1"'}});
+  };
+  const base='https://example.test/api/occurrences?module=ste&key=';
+  try {
+    const r=await worker.default.fetch(new Request(base+encodeURIComponent('predictions/caraya/Alouatta_caraya_rs_250m_anual_2015_2024_adequabilidade.tif')),env,{});
+    assert.equal(r.status,200); assert.equal((await r.json()).source,'species-table/caraya.csv'); assert.equal(calls.length,3);
+    const huge=await worker.default.fetch(new Request(base+encodeURIComponent('predicoes_cenarios/test/Test_huge/anual_2015_2024/Test_huge_anual_2015_2024_adequabilidade.tif')),env,{});
+    assert.equal(huge.status,413);
+    const missing=await worker.default.fetch(new Request(base+encodeURIComponent('predicoes_cenarios/test/Other_species/anual_2015_2024/Other_species_anual_2015_2024_adequabilidade.tif')),env,{});
+    assert.equal(missing.status,404);
+    globalThis.fetch=async()=>new Response(new Uint8Array(16*1024*1024+1),{headers:{etag:'"v1"'}});
+    const oversized=await worker.default.fetch(new Request(base+encodeURIComponent('predictions/caraya/Alouatta_caraya_rs_250m_anual_2015_2024_adequabilidade.tif')),env,{});
+    assert.equal(oversized.status,413);
+  } finally {globalThis.fetch=orig;}
+});

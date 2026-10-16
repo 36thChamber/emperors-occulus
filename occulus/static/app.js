@@ -98,6 +98,7 @@ function dates() {
   );
   removeLayers();
   $("load").disabled = !ds.length;
+  window.OcculusOccurrenceUI?.sync();
   msg(
     ds.length
       ? "Cogitador pronto. Invoque a visão para carregar uma análise."
@@ -152,6 +153,8 @@ async function catalog(refresh = false) {
   const id = ++catalogGeneration,
     module = activeModule();
   removeLayers();
+  items = [];
+  window.OcculusOccurrenceUI?.sync(true);
   $("refresh").disabled = true;
   $("load").disabled = true;
   msg("Sincronizando " + modules.definitions[module].label + "…");
@@ -368,7 +371,7 @@ $("compare").onchange = () => {
   if (selection) render(false, currentCrop);
 };
 $("load").onclick = () => render(true);
-$("refresh").onclick = () => catalog(true);
+$("refresh").onclick = () => { window.OcculusOccurrenceUI?.resetCache(); catalog(true); };
 $("fit").onclick = () => {
   if (selection) map.fitBounds(selection.bounds, { padding: [35, 35] });
 };

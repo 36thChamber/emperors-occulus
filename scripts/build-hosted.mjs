@@ -39,7 +39,7 @@ assets["/"].body = assets["/"].body.replace(
 const schema = fs.readFileSync("occulus/static/modules.js", "utf8");
 const api =
   schema +
-  "\n" +
+  "\n" + fs.readFileSync("occulus/static/occurrences.js", "utf8") + "\n" +
   fs
     .readFileSync("hosted/worker/api.js", "utf8")
     .replace("export async function api", "async function api");
