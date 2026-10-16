@@ -176,6 +176,12 @@
         ? siapesqNames[a.toLowerCase()] || marineNames[a.toLowerCase()]
         : a.replaceAll("_", " ");
   const regionLabel = (r) => {
+    const groups = {
+      "lote:comuns-rs-es": "Comuns RS + ES · 17 cenários",
+      "lote:exclusivas-rs": "Exclusivas RS · 17 cenários",
+      "lote:exclusivas-es-ocean": "Exclusivas ES · oceânico · 17 cenários",
+    };
+    if (groups[r]) return groups[r];
     const named = {
       nacional_1km: "Brasil · 1 km",
       rs_250m: "RS · 250 m",
