@@ -4,6 +4,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from .core import Catalog, fetch_range
 from .modules import ModuleCatalog
 from .occurrences import OccurrenceReader
+from .cog import CogEvaluation
 
 
 def wsl_network():
@@ -21,6 +22,7 @@ def create_app(catalog=None):
     app.config["MAX_CONTENT_LENGTH"] = 4096
     catalog = catalog or Catalog()
     occurrences = OccurrenceReader(catalog.s3)
+    cog = CogEvaluation(catalog.s3)
     catalogs = {
         "phytobloom": catalog,
         "ste": ModuleCatalog("ste", catalog.s3),
@@ -32,6 +34,12 @@ def create_app(catalog=None):
         if module not in catalogs:
             raise ValueError("Módulo inválido.")
         return catalogs[module]
+
+    def selected_dataset():
+        dataset = request.args.get("dataset", "original")
+        if dataset not in ("original", "cog") or (dataset == "cog" and request.args.get("module") != "ste"):
+            raise ValueError("Conjunto de avaliação inválido.")
+        return dataset
 
     token = secrets.token_urlsafe(32)
     wsl_ip, gateway = wsl_network()
@@ -88,6 +96,14 @@ def create_app(catalog=None):
         item = selected.items.get(key)
         if not item:
             raise ValueError("Arquivo não encontrado no catálogo.")
+        if selected_dataset() == "cog":
+            row = cog.index().get(key)
+            if not row or row["source_etag"] != item["etag"]:
+                raise ValueError("Arquivo fora do lote de avaliação COG atual.")
+            key = row["key"]
+            item = {**item, "bytes": row["bytes"], "etag": row["etag"]}
+            if request.args.get("etag") != item["etag"]:
+                return jsonify(error="A cópia COG mudou. Atualize o catálogo."), 409
         start, end = int(request.args["start"]), int(request.args["end"])
         if start < 0 or end < start or end - start + 1 > 262144:
             raise ValueError("Intervalo inválido.")
@@ -106,7 +122,9 @@ def create_app(catalog=None):
 
     @app.get("/api/catalog")
     def listing():
-        return jsonify(selected_catalog().list(request.args.get("refresh") == "1"))
+        dataset = selected_dataset()
+        result = selected_catalog().list(request.args.get("refresh") == "1")
+        return jsonify(cog.catalog(result) if dataset == "cog" else result)
 
     @app.post("/api/preview")
     def preview():

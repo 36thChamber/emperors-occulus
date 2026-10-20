@@ -19,6 +19,7 @@ window.OcculusRaster = (() => {
       start: String(start),
       end: String(end),
       etag: item.etag,
+      dataset: item.dataset || "original",
     });
     let r;
     for (let attempt = 0; attempt < 3; attempt++) {

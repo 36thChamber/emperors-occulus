@@ -1,5 +1,22 @@
 const enc = new TextEncoder();
 const catalogCaches = new Map();
+const COG_PREFIX = "auspex/cog-avaliacao/2026-10-20/";
+let cogCache = null;
+async function cogIndex(env) {
+  if (!cogCache || Date.now() - cogCache.at > 600000) {
+    const manifest = await (await signed(env, COG_PREFIX + "pilot-manifest.json", {}, null, "ste-siapesq")).json();
+    if (manifest.status !== "validated" || manifest.errors?.length) throw Error("Avaliação COG ainda não validada.");
+    const files = new Map();
+    for (const row of manifest.files || []) {
+      if (row.module !== "ste" || row.bucket !== "ste-siapesq" || row.source_bucket !== "ste-siapesq" ||
+          !OcculusModules.parse("ste", row.source_key) || row.key !== COG_PREFIX + "ste/" + row.source_key ||
+          !row.cog_valid || !row.pixels_bitwise_equal || !row.masks_equal || !row.range_read_verified) continue;
+      files.set(row.source_key, row);
+    }
+    cogCache = { at: Date.now(), files };
+  }
+  return cogCache.files;
+}
 let occurrenceIndex = null;
 const MAX_CSV_BYTES = 16 * 1024 * 1024;
 const hex = (b) =>
@@ -91,6 +108,9 @@ export async function api(request, env) {
     : null;
   if (!definition)
     return Response.json({ error: "Módulo inválido." }, { status: 400 });
+  const dataset = url.searchParams.get("dataset") || "original";
+  if (!["original", "cog"].includes(dataset) || (dataset === "cog" && module !== "ste"))
+    return Response.json({ error: "Conjunto de avaliação inválido." }, { status: 400 });
   if (url.pathname === "/api/catalog") {
     let catalogCache = catalogCaches.get(module);
     if (
@@ -137,6 +157,16 @@ export async function api(request, env) {
       };
     }
     catalogCaches.set(module, catalogCache);
+    if (dataset === "cog") {
+      const index = await cogIndex(env);
+      const items = catalogCache.data.items.flatMap(item => {
+        const row = index.get(item.key);
+        // An updated official prediction must never be paired with a stale COG.
+        if (!row || row.source_etag !== item.etag) return [];
+        return [{ ...item, dataset: "cog", bytes: row.bytes, etag: row.etag }];
+      });
+      return Response.json({ ...catalogCache.data, items, dataset: "cog", experimental: true });
+    }
     return Response.json(catalogCache.data);
   }
   if (url.pathname === "/api/occurrences") {
@@ -190,9 +220,17 @@ export async function api(request, env) {
       end - start + 1 > 262144
     )
       return Response.json({ error: "Intervalo inválido." }, { status: 400 });
+    let storageKey = key;
+    if (dataset === "cog") {
+      const row = (await cogIndex(env)).get(key);
+      if (!row) return Response.json({ error: "Arquivo fora do lote de avaliação COG." }, { status: 404 });
+      if (url.searchParams.get("etag") !== row.etag)
+        return Response.json({ error: "A cópia COG mudou. Atualize o catálogo." }, { status: 409 });
+      storageKey = row.key;
+    }
     const r = await signed(
       env,
-      key,
+      storageKey,
       {},
       `bytes=${start}-${end}`,
       definition.bucket,

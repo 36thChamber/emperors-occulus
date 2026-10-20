@@ -157,6 +157,9 @@ function regions() {
 async function catalog(refresh = false) {
   const id = ++catalogGeneration,
     module = activeModule();
+  $("dataset-control").hidden = module !== "ste";
+  if (module !== "ste") $("dataset").value = "original";
+  const dataset = $("dataset").value;
   removeLayers();
   items = [];
   window.OcculusOccurrenceUI?.sync(true);
@@ -166,7 +169,7 @@ async function catalog(refresh = false) {
   try {
     const old = $("area").value,
       j = await api(
-        "/api/catalog?module=" + module + (refresh ? "&refresh=1" : ""),
+        "/api/catalog?module=" + module + "&dataset=" + dataset + (refresh ? "&refresh=1" : ""),
       );
     if (id !== catalogGeneration) return;
     items = j.items;
@@ -200,7 +203,8 @@ async function catalog(refresh = false) {
       .sort();
     $("latest").textContent = stamps.length ? day(stamps.at(-1)) : "—";
     $("catalog-status").textContent =
-      items.length + " produtos · " + modules.definitions[module].label;
+      items.length + " produtos · " + modules.definitions[module].label +
+      (dataset === "cog" ? " · COG experimental" : "");
     regions();
   } catch (e) {
     if (id === catalogGeneration) msg(e.message, true);
@@ -443,6 +447,7 @@ $("fit").onclick = () => {
 $("quality").onchange = () => {
   if (selection) render(false, currentCrop);
 };
+$("dataset").onchange = () => catalog();
 $("opacity").oninput = () => {
   overlayA?.setOpacity(Number($("opacity").value));
   overlayB?.setOpacity(Number($("opacity").value));
