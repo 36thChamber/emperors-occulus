@@ -6,11 +6,11 @@ O módulo Phytobloom consulta NDCI, NDVI, NDVI2, RGB e RGB com máscara no bucke
 
 ## Mapa e interpretação
 
-OpenStreetMap é o fundo padrão, sem chave de Google Maps. Arraste o mapa ou use a roda do mouse para navegar. Ao ampliar, a interface lê amostras do trecho visível após uma pausa de um segundo. **Enquadrar análise** centraliza o resultado; opacidade permite conferir o alinhamento com o mapa-base.
+OpenStreetMap é o fundo padrão, sem chave de Google Maps. Arraste o mapa ou use a roda do mouse para navegar. Em **Detalhado · grade original**, a interface lê os pixels originais do trecho visível por blocos. Os modos Econômico e Equilibrado continuam disponíveis como prévias amostradas. **Enquadrar análise** centraliza o resultado; opacidade permite conferir o alinhamento com o mapa-base.
 
 O GeoTIFF fornece origem, tamanho dos pixels e EPSG. As amostras são reprojetadas em memória para Web Mercator antes da sobreposição. Esta versão suporta EPSG:4326, EPSG:3857 e UTM/WGS84 norte e sul. A comparação calcula o recorte de cada TIFF pelas coordenadas do mapa, inclusive quando as grades diferem.
 
-As prévias usam amostragem pontual, não médias: feições estreitas podem não aparecer até aproximar. NDCI/NDVI/NDVI2 usam escala visual fixa −1 a +1, sem classificação de risco ou concentração. RGB usa contraste dos percentis 2–98 de cada prévia; diferenças de brilho não são comparações quantitativas. NaN/NoData ficam transparentes; RGB inteiramente zero é tratado como fundo. Data do arquivo é a aquisição da imagem, não a execução do job.
+Nos modos Econômico e Equilibrado, as prévias usam amostragem pontual, não médias: feições estreitas podem não aparecer até aproximar. NDCI/NDVI/NDVI2 usam escala visual fixa −1 a +1, sem classificação de risco ou concentração. RGB usa contraste dos percentis 2–98 de cada prévia; diferenças de brilho não são comparações quantitativas. NaN/NoData ficam transparentes; RGB inteiramente zero é tratado como fundo. Data do arquivo é a aquisição da imagem, não a execução do job.
 
 Para usar Google Maps, configure `GOOGLE_MAPS_API_KEY` no ambiente local ou hospedado e habilite a Maps JavaScript API. As opções Google ruas e Google satélite passam a ficar disponíveis na interface. Ruas usa estilos nativos em verde e preto; satélite recebe filtro visual de fósforo verde. OpenStreetMap também recebe o filtro CRT. A chave de mapa é destinada ao navegador: restrinja-a aos domínios da aplicação e à API necessária no Google Cloud. Google exige faturamento habilitado e pode cobrar conforme uso; a opção não é ativada sem configuração.
 
@@ -108,3 +108,18 @@ Verificações: `npm run build && npm test`, testes Python e `tests/occurrence_b
 
 
 Os lotes ativos consolidados ficam em `predicoes_cenarios/comuns-rs-es/` (26 espécies), `predicoes_cenarios/exclusivas-rs/` (4 espécies) e `predicoes_cenarios/exclusivas-es-ocean/` (4 espécies). Cada espécie tem 17 cenários; as versões históricas ficam fora do catálogo em `migration-backups/`. Os nomes dos TIFFs são preservados. O `complete.json` de cada cenário registra a origem da versão selecionada, e `_run/consolidation.json` registra a seleção do grupo. Em Turdus rufiventris, somente 3 cenários foram concluídos no retreino; os outros 14 mantêm a versão anterior, sem presumir que pertencem ao mesmo modelo.
+
+
+## Resolução nativa no mapa
+
+**Detalhado · grade original** é o padrão. O recorte `rs_250m` sempre usa esse modo, inclusive com o mapa afastado. A grade do arquivo de teste é 4.400 × 3.600 pixels, com escala de 0,0025° em EPSG:4326; 250 m é uma resolução nominal, não uma grade métrica exatamente quadrada em toda latitude.
+
+`native-raster.js` lê faixas nativas de até 128 linhas e desenha blocos com cada célula da fonte, respeitando NoData. O leitor em `raster.js` agrupa intervalos contíguos em requisições de até 256 KiB, decodifica LZW/DEFLATE e mantém até 64 MiB de blocos decodificados em memória por camada. As faixas sem compressão são lidas por intervalos de linha. Os blocos de desenho são alinhados à grade de origem para reutilização durante a navegação. Ao sair da área visível, as imagens correspondentes são removidas; nenhum TIFF é salvo no disco.
+
+O indicador só declara **Grade original** depois de concluir todos os blocos necessários. **Visão reduzida na tela** significa que vários pixels da grade cabem em um pixel físico do monitor; o leitor continua usando a grade nativa. **Pixels individuais na tela** informa que o zoom permite distinguir essas células. A reprojeção para o mapa usa vizinho mais próximo, com grade de desenho sem a antiga altura fixa de 512; isso não altera a matriz do TIFF. Para RGB, o contraste da primeira faixa válida fica fixo por camada para evitar mudanças entre blocos.
+
+A leitura é limitada a 16 Mi pixels de grade no recorte visível e 64 MiB transferidos por atualização/camada. O arquivo de 250 m testado tem 15,84 milhões de pixels e cabe integralmente. Se outro arquivo exceder os limites, o indicador informa leitura incompleta e pede aproximação; não troca silenciosamente para uma prévia reduzida. Em comparação, as duas camadas mantêm leitores próprios e o mesmo divisor visual. O cancelamento ao mover ou trocar de espécie impede que uma leitura antiga complete uma seleção nova.
+
+Os TIFFs do S3 não foram convertidos para COG. O leitor aceita os blocos/strips disponíveis e, em um COG compatível, usa a imagem base no modo nativo. Overviews são versões reduzidas e não substituem a base no modo obrigatório de 250 m. Uma conversão posterior deve preservar grade, tipo numérico, NoData e valores, além de atualizar os hashes dos arquivos nos manifestos.
+
+QA: `tests/native_raster_check.py` compara todos os pixels em LZW, DEFLATE e TIFF sem compressão, testa cache, cancelamento e comparação. `tests/native_s3_check.py` verifica a grade completa real de 250 m sem zoom, pixels contra rasterio, navegação e layout mobile, sem guardar um TIFF local. Esses testes usam a prévia local na porta 8876. Resultados e screenshots ficam em `artifacts/native/`.

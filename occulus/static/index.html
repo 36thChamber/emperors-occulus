@@ -13,6 +13,7 @@
     <script src="/static/vendor/proj4.js" defer></script>
     <script src="/static/vendor/googlemutant.js" defer></script>
     <script src="/static/raster.js" defer></script>
+    <script src="/static/native-raster.js" defer></script>
     <script src="/static/modules.js" defer></script>
     <script src="/static/occurrences.js" defer></script>
     <script src="/static/app.js" defer></script>
@@ -71,8 +72,8 @@
           ><label
             >Detalhe<select id="quality">
               <option value="96">Econômico</option>
-              <option value="128" selected>Equilibrado</option>
-              <option value="256">Detalhado</option>
+              <option value="128">Equilibrado · prévia</option>
+              <option value="native" selected>Detalhado · grade original</option>
             </select></label
           ><button id="load">▶ Invocar visão</button>
         </div>
@@ -132,6 +133,7 @@
           >
             [ ]
           </button>
+          <div id="resolution-status" class="resolution-status" role="status" aria-live="polite" hidden></div>
           <div class="map-legend" id="legend">
             <span><span id="legend-label">ÍNDICE / CORES ORIGINAIS</span></span>
             <div class="ramp"></div>

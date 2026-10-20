@@ -144,6 +144,8 @@ window.OcculusRaster = (() => {
       c = fd.SamplesPerPixel || 1,
       bits = fd.BitsPerSample[0],
       format = fd.SampleFormat?.[0] || 1;
+    if ((format === 3 && ![32,64].includes(bits)) || (format !== 3 && bits === 64))
+      throw Error("Tipo numérico de pixel ainda não suportado sem perda.");
     const little = image.littleEndian;
     const origin = [tie[3] - tie[0] * scale[0], tie[4] + tie[1] * scale[1]],
       p = projection(fd);
@@ -196,7 +198,7 @@ window.OcculusRaster = (() => {
       Math.max(...pts.map((p) => p[1])),
     ];
   }
-  function cropForBounds(meta, b) {
+  function cropForBounds(meta, b, options = {}) {
     const coords = [];
     for (let i = 0; i <= 8; i++) {
       const t = i / 8;
@@ -213,13 +215,13 @@ window.OcculusRaster = (() => {
         ]);
       }
     }
-    const margin = 0.015,
+    const margin = options.native ? 0 : 0.015,
       x0 = Math.max(0, Math.min(...coords.map((p) => p[0])) - margin),
       y0 = Math.max(0, Math.min(...coords.map((p) => p[1])) - margin),
       x1 = Math.min(1, Math.max(...coords.map((p) => p[0])) + margin),
       y1 = Math.min(1, Math.max(...coords.map((p) => p[1])) + margin);
     return x1 > x0 && y1 > y0
-      ? [x0, y0, x1, y1].map((v) => Math.round(v * 1000) / 1000)
+      ? [x0, y0, x1, y1].map((v) => options.native ? v : Math.round(v * 1000) / 1000)
       : null;
   }
   function value(v, off, bits, fmt, little) {
@@ -239,12 +241,13 @@ window.OcculusRaster = (() => {
         ? v.getUint16(off, little)
         : v.getUint8(off);
   }
-  function color(data, c, product, module = "phytobloom") {
+  function color(data, c, product, module = "phytobloom", rgbRange = null) {
     const result = new Uint8ClampedArray((data.length / c) * 4),
       rgb = product.startsWith("RGB");
     let lo = 0,
       hi = 1;
-    if (rgb) {
+    if (rgb && rgbRange) { [lo, hi] = rgbRange; }
+    else if (rgb) {
       const v = Array.from(data)
         .filter(Number.isFinite)
         .sort((a, b) => a - b);
@@ -286,22 +289,30 @@ window.OcculusRaster = (() => {
     }
     return result;
   }
-  function warp(meta, crop, sw, sh, rgba) {
+  function warp(meta, crop, sw, sh, rgba, native = false) {
     const extent = bounds(meta, crop),
       mw = extent[2] - extent[0],
       mh = extent[3] - extent[1],
-      oh = 512,
-      ow = Math.max(1, Math.min(1024, Math.round((oh * mw) / mh)));
+      sourceStep = native ? nativeStep(meta, crop) : null,
+      oh = native ? Math.max(1, Math.ceil(mh / sourceStep)) : 512,
+      ow = native ? Math.max(1, Math.ceil(mw / sourceStep)) : Math.max(1, Math.min(1024, Math.round((oh * mw) / mh)));
+    if (native && (ow > 2048 || oh > 2048)) throw Error("Bloco de reprojeção grande demais. Aproxime o mapa.");
     const canvas = document.createElement("canvas");
     canvas.width = ow;
     canvas.height = oh;
     const ctx = canvas.getContext("2d"),
       out = ctx.createImageData(ow, oh);
-    for (let y = 0; y < oh; y++)
+    const simple = meta.epsg === 4326 || meta.epsg === 3857;
+    const nativeX = simple ? Array.from({length: ow}, (_, x) => {
+      const mercX = extent[0] + ((x + 0.5) * mw) / ow;
+      return meta.epsg === 4326 ? mercX / 6378137 * 180 / Math.PI : mercX;
+    }) : null;
+    for (let y = 0; y < oh; y++) {
+      const mercY = extent[3] - ((y + 0.5) * mh) / oh;
+      const nativeY = meta.epsg === 4326 ? (2 * Math.atan(Math.exp(mercY / 6378137)) - Math.PI / 2) * 180 / Math.PI : mercY;
       for (let x = 0; x < ow; x++) {
-        const native = meta.toMerc.inverse([
-          extent[0] + ((x + 0.5) * mw) / ow,
-          extent[3] - ((y + 0.5) * mh) / oh,
+        const native = simple ? [nativeX[x], nativeY] : meta.toMerc.inverse([
+          extent[0] + ((x + 0.5) * mw) / ow, mercY,
         ]);
         const nx =
             ((native[0] - meta.origin[0]) / (meta.w * meta.scale[0]) -
@@ -316,6 +327,7 @@ window.OcculusRaster = (() => {
           dst = (y * ow + x) * 4;
         out.data.set(rgba.subarray(src, src + 4), dst);
       }
+    }
     ctx.putImageData(out, 0, 0);
     const southWest = proj4("EPSG:3857", "EPSG:4326", [extent[0], extent[1]]),
       northEast = proj4("EPSG:3857", "EPSG:4326", [extent[2], extent[3]]);
@@ -524,5 +536,106 @@ window.OcculusRaster = (() => {
     while (previews.size > 12) previews.delete(previews.keys().next().value);
     return result;
   }
-  return { header, preview, cropForBounds, bounds, color };
+  function nativeStep(meta, crop) {
+    let step = Infinity;
+    for (const fx of [0, .5, 1]) for (const fy of [0, .5, 1]) {
+      const x = meta.origin[0] + (crop[0] + fx * (crop[2]-crop[0])) * meta.w * meta.scale[0];
+      const y = meta.origin[1] - (crop[1] + fy * (crop[3]-crop[1])) * meta.h * meta.scale[1];
+      const p = meta.toMerc.forward([x,y]);
+      for (const q of [[x+meta.scale[0],y],[x,y-meta.scale[1]]]) {
+        const m = meta.toMerc.forward(q), length = Math.hypot(m[0]-p[0],m[1]-p[1]);
+        if (Number.isFinite(length) && length > 0) step = Math.min(step,length);
+      }
+    }
+    if (!Number.isFinite(step)) throw Error("Extensão fora do mapa Web Mercator.");
+    return step / ([4326,3857].includes(meta.epsg) ? 1.05 : 1.5);
+  }
+
+  async function createNativeReader(item, signal) {
+    const meta = await header(item, signal), fd = meta.fd;
+    const compressed = (fd.Compression || 1) !== 1 || !!fd.TileWidth;
+    const tiled = !!fd.TileWidth, bw = tiled ? fd.TileWidth : meta.w;
+    const bh = tiled ? fd.TileLength : fd.RowsPerStrip || meta.h;
+    const offsets = tiled ? fd.TileOffsets : fd.StripOffsets;
+    const counts = tiled ? fd.TileByteCounts : fd.StripByteCounts;
+    const across = Math.ceil(meta.w / bw), pixelBytes = meta.c * meta.bits / 8;
+    const cache = new Map(); let cacheBytes = 0, transferred = 0, remainingBudget = 64 * 1048576;
+    const cacheLimit = 64 * 1048576;
+    if (compressed && bw*bh*pixelBytes > cacheLimit) throw Error("Bloco TIFF excede a memória nativa. É necessário um TIFF organizado em blocos menores.");
+    const decoder = compressed ? await GeoTIFF.getDecoder(fd) : null;
+    let nodata = Number(String(fd.GDAL_NODATA).replace(/\0/g, "").trim());
+    if (meta.format === 3 && meta.bits === 32) nodata = Math.fround(nodata);
+    function blocks(window) {
+      const [left,top,right,bottom] = window, result = [];
+      if (compressed) {
+        for(let by=Math.floor(top/bh);by<=Math.floor((bottom-1)/bh);by++)
+          for(let bx=Math.floor(left/bw);bx<=Math.floor((right-1)/bw);bx++) {
+            const index=by*across+bx;
+            if (!cache.has(index)) result.push({index,start:Number(offsets[index]),end:Number(offsets[index])+Number(counts[index])-1});
+          }
+      } else {
+        for(let row=top;row<bottom;row++) {
+          const strip=Math.floor(row/bh), inStrip=row%bh;
+          const start=Number(offsets[strip])+inStrip*meta.w*pixelBytes+left*pixelBytes;
+          result.push({row,start,end:start+(right-left)*pixelBytes-1});
+        }
+      }
+      return result;
+    }
+    function estimate(window) { return blocks(window).reduce((n,b)=>n+b.end-b.start+1,0); }
+    async function read(window, requestSignal) {
+      requestSignal?.throwIfAborted();
+      const [left,top,right,bottom] = window, width=right-left, height=bottom-top;
+      if(width<1 || height<1 || width*height*meta.c*8>32*1048576) throw Error("Faixa nativa grande demais para a memória.");
+      const data = new Float64Array(width*height*meta.c), needed=blocks(window).sort((a,b)=>a.start-b.start);
+      const local=new Map(), groups=[];
+      if(compressed) for(let by=Math.floor(top/bh);by<=Math.floor((bottom-1)/bh);by++)
+        for(let bx=Math.floor(left/bw);bx<=Math.floor((right-1)/bw);bx++){const i=by*across+bx;if(cache.has(i))local.set(i,cache.get(i));}
+      for(const block of needed) {
+        // The proxy accepts <=256 KiB. Large blocks are split below.
+        const last=groups.at(-1);
+        if(last && block.start<=last.end+1025 && block.end-last.start+1<=262144) { last.end=Math.max(last.end,block.end);last.blocks.push(block); }
+        else groups.push({start:block.start,end:block.end,blocks:[block]});
+      }
+      let cursor=0;
+      async function worker() {
+        while(cursor<groups.length) {
+          requestSignal?.throwIfAborted();
+          const group=groups[cursor++], bytes=new Uint8Array(group.end-group.start+1);
+          for(let off=0;off<bytes.length;off+=262144) {
+            const length=Math.min(262144,bytes.length-off);
+            if(length>remainingBudget)throw Error("A leitura nativa excederia 64 MiB. Aproxime o mapa; nenhum pixel foi substituído por amostragem.");
+            remainingBudget-=length;
+            const part=await interval(item,group.start+off,Math.min(group.end,group.start+off+262143),requestSignal);
+            transferred+=part.byteLength;bytes.set(new Uint8Array(part),off);
+          }
+          for(const block of group.blocks) {
+            const encoded=bytes.slice(block.start-group.start,block.end-group.start+1);
+            if(compressed) {
+              if(bw*bh*pixelBytes>cacheLimit) throw Error("Bloco TIFF excede a memória nativa. É necessário um TIFF organizado em blocos menores.");
+              const decoded=await decoder.decode(fd,encoded.buffer);requestSignal?.throwIfAborted();
+              const view=new DataView(decoded);local.set(block.index,view);
+              if(!cache.has(block.index)) { cache.set(block.index,view);cacheBytes+=decoded.byteLength; }
+              while(cacheBytes>cacheLimit && cache.size) {const first=cache.keys().next().value;cacheBytes-=cache.get(first).byteLength;cache.delete(first);}
+            } else local.set(block.row,new DataView(encoded.buffer));
+          }
+        }
+      }
+      await Promise.all(Array.from({length:6},worker));requestSignal?.throwIfAborted();
+      for(let row=top;row<bottom;row++) for(let col=left;col<right;col++) {
+        const index=Math.floor(row/bh)*across+Math.floor(col/bw);
+        const view=compressed ? local.get(index)||cache.get(index) : local.get(row);
+        if(!view) throw Error("Bloco nativo não carregado.");
+        const source=compressed ? ((row%bh)*bw+(col%bw))*pixelBytes : (col-left)*pixelBytes;
+        for(let band=0;band<meta.c;band++) {
+          let v=value(view,source+band*meta.bits/8,meta.bits,meta.format,meta.little);
+          if(fd.GDAL_NODATA!==undefined && v===nodata)v=NaN;
+          data[((row-top)*width+col-left)*meta.c+band]=v;
+        }
+      }
+      return {data,width,height,window,transferred};
+    }
+    return {meta,read,estimate,startView(limit){remainingBudget=limit;},get transferred(){return transferred;},clear(){cache.clear();cacheBytes=0;}};
+  }
+  return { header, preview, cropForBounds, bounds, color, warp, createNativeReader };
 })();

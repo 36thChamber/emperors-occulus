@@ -747,3 +747,7 @@ button[aria-pressed="true"] { background: #164225; border-color: var(--phosphor)
   .occurrence-panel { right: 6px; bottom: 8px; width: calc(100% - 12px); height: min(420px, calc(100% - 120px)); padding: 8px; }
   .map-workspace { grid-template-rows: 23px minmax(0, 1fr); }
 }
+.resolution-status { position:absolute; left:13px; bottom:102px; max-width:calc(100% - 26px); padding:6px 9px; border:1px solid var(--edge); background:#031008ed; color:var(--phosphor); z-index:500; font-size:9px; pointer-events:none; }
+.resolution-status[data-state="loading"] { color:var(--muted); }
+.resolution-status[data-state="error"] { border-color:var(--phosphor); }
+@media(max-width:600px) { .resolution-status { left:8px; font-size:7px; bottom:85px; max-width:calc(100% - 16px); } }

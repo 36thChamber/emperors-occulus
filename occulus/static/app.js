@@ -64,6 +64,7 @@ function removeLayers() {
   if (overlayB) map.removeLayer(overlayB);
   overlayA = overlayB = null;
   selection = null;
+  $("resolution-status").hidden = true;
   $("load").disabled = false;
   $("fit").disabled = true;
   $("comparison").hidden = true;
@@ -72,6 +73,10 @@ function removeLayers() {
     "Selecione Invocar visão para carregar a análise.";
 }
 function dates() {
+  const fixed250 = activeModule() === "ste" && $("region").value === "rs_250m";
+  if (fixed250) $("quality").value = "native";
+  $("quality").disabled = fixed250;
+  $("quality").title = fixed250 ? "O recorte de 250 m sempre usa a grade original." : "";
   const area = $("area").value,
     product = $("product").value,
     old = $("date").value,
@@ -263,6 +268,12 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
           ]),
         ) || crop;
     }
+    if ($("quality").value === "native" || item.region === "rs_250m") {
+      await renderNative(item, compare, pendingMeta, fit, crop, id, signal);
+      return;
+    }
+    $("resolution-status").hidden = false;
+    $("resolution-status").textContent = "Prévia amostrada · resolução original não garantida";
     const result = await OcculusRaster.preview(
       item,
       Number($("quality").value),
@@ -327,9 +338,63 @@ async function render(fit = false, crop = [0, 0, 1, 1]) {
     if (id === generation) $("load").disabled = false;
   }
 }
+function nativeProgress() {
+  const a = overlayA?.getStats?.(), b = overlayB?.getStats?.();
+  if (!a) return;
+  const badge = $("resolution-status"); badge.hidden = false;
+  const all = [a, ...(b ? [b] : [])];
+  const error = all.find(x => x.state === "error" || x.state === "limited");
+  const loading = all.some(x => x.state === "loading");
+  const original250 = selection?.meta?.item?.region === "rs_250m";
+  const grid = original250 ? "Grade original · ≈250 m" : "Grade original · " + a.resolution;
+  if (error) {
+    badge.textContent = "Leitura nativa incompleta · aproxime o mapa";
+    badge.dataset.state = "error"; msg(error.error, true);
+  } else if (all.every(x => x.state === "outside")) {
+    badge.textContent = "Fora da extensão do TIFF"; badge.dataset.state = "outside";
+  } else if (loading) {
+    const done = all.reduce((n,x)=>n+x.cells,0), total = all.reduce((n,x)=>n+x.expected,0);
+    badge.textContent = grid + " · carregando " + (total ? Math.floor(done/total*100) : 0) + "%";
+    badge.dataset.state = "loading";
+  } else {
+    badge.textContent = grid + (all.some(x=>x.screenReduced) ? " · visão reduzida na tela" : " · pixels individuais na tela");
+    badge.dataset.state = "native";
+    msg("Grade original carregada no trecho visível. Arraste e amplie para explorar.");
+  }
+  $("read-info").textContent = `${a.cells.toLocaleString('pt-BR')} pixels da grade · ${fmt(a.transferred || 0)} lidos · dados apenas na memória`;
+  clip();
+}
+async function renderNative(item, compare, meta, fit, crop, id, signal) {
+  const extent = OcculusRaster.bounds(meta,crop);
+  const sw = proj4('EPSG:3857','EPSG:4326',[extent[0],extent[1]]), ne = proj4('EPSG:3857','EPSG:4326',[extent[2],extent[3]]);
+  const nativeBounds = [[sw[1],sw[0]],[ne[1],ne[0]]];
+  const reader = await OcculusRaster.createNativeReader(item,signal);
+  if(id!==generation) {reader.clear();return;}
+  if(overlayA)map.removeLayer(overlayA);if(overlayB)map.removeLayer(overlayB);overlayB=null;
+  selection={native:true,meta,bounds:nativeBounds};currentCrop=crop;
+  if(fit)map.fitBounds(nativeBounds,{padding:[35,35],animate:false});
+  const layer = new OcculusNative.Layer(reader,{pane:'native-raster-a',opacity:Number($("opacity").value),zIndex:10});
+  overlayA=layer;layer.on('nativeprogress',()=>{if(overlayA===layer)nativeProgress();});layer.addTo(map);
+  $("fit").disabled=false;
+  $("legend").hidden=item.product.startsWith('RGB');
+  const index=activeModule()==='phytobloom';
+  $("legend-min").textContent=index?'−1':'0';$("legend-mid").textContent=index?'0':'0.5';$("legend-max").textContent=index?'+1':'1';
+  $("legend-label").textContent=index?'ÍNDICE / CORES ORIGINAIS':modules.productLabel(item.product).toUpperCase()+' / ESCALA 0–1';
+  $("map-title").textContent=`${modules.areaLabel(item.area,activeModule())} // ${modules.productLabel(item.product)}`;
+  $("map-subtitle").textContent=`${day(item.date)} · EPSG:${meta.epsg} · grade ${OcculusNative.resolutionLabel(meta)}`;
+  $("comparison").hidden=true;
+  if(compare) {
+    const other=await OcculusRaster.createNativeReader(compare,signal);
+    if(id!==generation){other.clear();return;}
+    const second=new OcculusNative.Layer(other,{pane:'native-raster-b',opacity:Number($("opacity").value),zIndex:11});
+    overlayB=second;second.on('nativeprogress',()=>{if(overlayB===second)nativeProgress();});second.addTo(map);
+    $("comparison").hidden=false;$("comparison-label").textContent=day(compare.date)+' ↔ '+day(item.date);
+  }
+  nativeProgress();
+}
 function refine() {
   clip();
-  if (!selection) return;
+  if (!selection || selection.native) return;
   clearTimeout(refineTimer);
   refineTimer = setTimeout(() => {
     if (!selection) return;
